@@ -142,7 +142,7 @@ graph TB
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourorg/neurograph.git
+git clone https://github.com/NeerajCodz/neurograph.git
 cd neurograph
 ```
 

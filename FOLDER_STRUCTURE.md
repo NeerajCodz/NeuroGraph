@@ -256,6 +256,11 @@ neurograph/
 │   ├── Dockerfile                          # Frontend Docker image
 │   └── .env.example                        # Example environment variables
 │
+├── observability/
+│   ├── grafana/                              # Grafana dashboards
+│   │   └── neurograph-dashboard.json
+│   ├── prometheus/                           # Prometheus configuration
+│   │   └── prometheus.yml
 ├── docker/                                 # Docker configurations
 │   ├── docker-compose.yml                  # Main compose file
 │   ├── docker-compose.dev.yml              # Development overrides
@@ -274,7 +279,7 @@ neurograph/
 │       ├── Dockerfile
 │       └── nginx.conf
 │
-├── scripts/                                # Project-level scripts
+├── scripts/                                # Project-level scripts (sh and ps1 )
 │   ├── setup.sh                            # Initial setup
 │   ├── dev.sh                              # Start development
 │   ├── build.sh                            # Build for production
