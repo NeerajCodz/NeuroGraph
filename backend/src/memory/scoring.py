@@ -1,7 +1,7 @@
 """Hybrid scoring for combining vector and graph search results."""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Any
 
 from src.core.config import get_settings
@@ -41,6 +41,12 @@ class ScoredNode:
             settings.scoring_centrality_weight * self.centrality_score +
             settings.scoring_temporal_weight * self.temporal_score
         )
+    
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        result = asdict(self)
+        result["final_score"] = self.final_score
+        return result
 
 
 class HybridScorer:
@@ -48,8 +54,13 @@ class HybridScorer:
 
     def __init__(self) -> None:
         self._settings = get_settings()
+        # Expose weights as properties for testing
+        self.semantic_weight = self._settings.scoring_semantic_weight
+        self.hop_weight = self._settings.scoring_hop_weight
+        self.centrality_weight = self._settings.scoring_centrality_weight
+        self.temporal_weight = self._settings.scoring_temporal_weight
 
-    def calculate_hop_score(self, hops: int) -> float:
+    def _compute_hop_score(self, hops: int) -> float:
         """Calculate hop-based score (closer = higher).
         
         Formula: 1 / (1 + hops)
@@ -60,7 +71,11 @@ class HybridScorer:
         """
         return 1.0 / (1.0 + hops)
 
-    def calculate_centrality_score(self, edge_count: int, max_edges: int) -> float:
+    def calculate_hop_score(self, hops: int) -> float:
+        """Public alias for _compute_hop_score."""
+        return self._compute_hop_score(hops)
+
+    def _compute_centrality_score(self, edge_count: int, max_edges: int) -> float:
         """Calculate centrality score based on edge count.
         
         Normalized by maximum edges in the result set.
@@ -69,7 +84,11 @@ class HybridScorer:
             return 0.0
         return edge_count / max_edges
 
-    def calculate_temporal_score(self, age_days: float, confidence: float) -> float:
+    def calculate_centrality_score(self, edge_count: int, max_edges: int) -> float:
+        """Public alias for _compute_centrality_score."""
+        return self._compute_centrality_score(edge_count, max_edges)
+
+    def _compute_temporal_score(self, age_days: float, confidence: float) -> float:
         """Calculate temporal score with decay.
         
         Formula: decay * confidence
@@ -78,6 +97,82 @@ class HybridScorer:
         decay_rate = self._settings.memory_decay_rate
         decay = math.exp(-decay_rate * age_days)
         return decay * confidence
+
+    def calculate_temporal_score(self, age_days: float, confidence: float) -> float:
+        """Public alias for _compute_temporal_score."""
+        return self._compute_temporal_score(age_days, confidence)
+
+    def score(
+        self,
+        semantic_score: float,
+        hops: int,
+        edge_count: int,
+        max_edges: int,
+        age_days: float,
+        confidence: float,
+    ) -> dict[str, Any]:
+        """Score a single node and return component scores."""
+        hop_score = self._compute_hop_score(hops)
+        centrality_score = self._compute_centrality_score(edge_count, max_edges)
+        temporal_score = self._compute_temporal_score(age_days, confidence)
+        
+        final_score = (
+            self.semantic_weight * semantic_score +
+            self.hop_weight * hop_score +
+            self.centrality_weight * centrality_score +
+            self.temporal_weight * temporal_score
+        )
+        
+        return {
+            "semantic_score": semantic_score,
+            "hop_score": hop_score,
+            "centrality_score": centrality_score,
+            "temporal_score": temporal_score,
+            "final_score": final_score,
+            "hops": hops,
+            "edge_count": edge_count,
+            "age_days": age_days,
+            "confidence": confidence,
+        }
+
+    def score_nodes(
+        self,
+        nodes: list[dict[str, Any]],
+        max_edges: int | None = None,
+    ) -> list[ScoredNode]:
+        """Score multiple nodes and return sorted list."""
+        if max_edges is None:
+            max_edges = max(n.get("edge_count", 0) for n in nodes) if nodes else 1
+        
+        scored_nodes: list[ScoredNode] = []
+        
+        for node in nodes:
+            hop_score = self._compute_hop_score(node.get("hops", 0))
+            centrality_score = self._compute_centrality_score(
+                node.get("edge_count", 0), max_edges
+            )
+            temporal_score = self._compute_temporal_score(
+                node.get("age_days", 0), node.get("confidence", 1.0)
+            )
+            
+            scored_node = ScoredNode(
+                node_id=node.get("node_id", ""),
+                name=node.get("name", ""),
+                content=node.get("content", ""),
+                layer=node.get("layer", "personal"),
+                semantic_score=node.get("semantic_score", 0.0),
+                hop_score=hop_score,
+                centrality_score=centrality_score,
+                temporal_score=temporal_score,
+                confidence=node.get("confidence", 1.0),
+                hops=node.get("hops", 0),
+                age_days=node.get("age_days", 0.0),
+                edge_count=node.get("edge_count", 0),
+            )
+            scored_nodes.append(scored_node)
+        
+        scored_nodes.sort(key=lambda n: n.final_score, reverse=True)
+        return scored_nodes
 
     def score_results(
         self,

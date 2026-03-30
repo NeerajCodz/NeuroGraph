@@ -59,6 +59,47 @@ def batch_cosine_similarity(query: np.ndarray, candidates: np.ndarray) -> np.nda
     return similarities
 
 
+def top_k_similar(
+    query: np.ndarray,
+    candidates: np.ndarray,
+    k: int = 10,
+    threshold: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Find top-k most similar candidates to query.
+    
+    Args:
+        query: Query vector
+        candidates: Candidate vectors (2D array)
+        k: Number of results
+        threshold: Minimum similarity threshold
+        
+    Returns:
+        Tuple of (indices, similarities) for top-k results
+    """
+    if candidates.size == 0:
+        return np.array([]), np.array([])
+    
+    # Calculate all similarities
+    similarities = batch_cosine_similarity(query, candidates)
+    
+    # Filter by threshold
+    valid_mask = similarities >= threshold
+    valid_indices = np.where(valid_mask)[0]
+    valid_similarities = similarities[valid_indices]
+    
+    # Get top k
+    if len(valid_similarities) == 0:
+        return np.array([]), np.array([])
+    
+    k = min(k, len(valid_similarities))
+    top_k_idx = np.argsort(valid_similarities)[::-1][:k]
+    
+    result_indices = valid_indices[top_k_idx]
+    result_similarities = valid_similarities[top_k_idx]
+    
+    return result_indices, result_similarities
+
+
 class SimilaritySearch:
     """In-memory similarity search (for small datasets or caching)."""
 

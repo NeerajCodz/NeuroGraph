@@ -50,6 +50,20 @@ class TemporalDecay:
             return 1.0
         return math.exp(-self._decay_rate * age_days)
 
+    def compute(self, age_days: float) -> float:
+        """Alias for calculate_decay for test compatibility."""
+        return self.calculate_decay(age_days)
+
+    def compute_temporal_score(self, age_days: float, confidence: float) -> float:
+        """Calculate temporal score (decay * confidence)."""
+        decay = self.calculate_decay(age_days)
+        return decay * confidence
+
+    def compute_from_timestamp(self, timestamp: datetime) -> float:
+        """Calculate decay from a timestamp."""
+        age_days = self.get_age_days(timestamp)
+        return self.calculate_decay(age_days)
+
     def apply_decay(
         self,
         confidence: float,
