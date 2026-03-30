@@ -4,14 +4,21 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Query
+import asyncpg
+from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api.dependencies.auth import get_current_user_id
 from src.core.logging import get_logger
+from src.core.config import get_settings
+from src.db.postgres import get_postgres_driver
+from src.rag.embeddings import EmbeddingsService
+from src.rag.hybrid_search import HybridSearch
+from src.models.gemini import get_gemini_client
 
 router = APIRouter()
 logger = get_logger(__name__)
+settings = get_settings()
 
 
 class MemoryCreate(BaseModel):
@@ -47,8 +54,30 @@ class MemorySearchResult(BaseModel):
     content: str
     layer: str
     confidence: float
-    similarity: float
+    score: float
     created_at: datetime
+
+
+# Initialize services
+_embeddings_service: EmbeddingsService | None = None
+_hybrid_search: HybridSearch | None = None
+_gemini_client = None
+
+
+def get_embeddings_service() -> EmbeddingsService:
+    """Get or create embeddings service."""
+    global _embeddings_service
+    if _embeddings_service is None:
+        _embeddings_service = EmbeddingsService()
+    return _embeddings_service
+
+
+def get_hybrid_search() -> HybridSearch:
+    """Get or create hybrid search service."""
+    global _hybrid_search
+    if _hybrid_search is None:
+        _hybrid_search = HybridSearch()
+    return _hybrid_search
 
 
 @router.post("/remember", response_model=MemoryResponse)
@@ -68,22 +97,69 @@ async def remember(
         content_length=len(memory.content),
     )
     
-    # TODO: Implement full remember flow:
-    # 1. Extract entities using Gemini
-    # 2. Generate embedding for content
-    # 3. Create/update nodes in Neo4j
-    # 4. Store embedding in PostgreSQL
-    # 5. Return created memory with entities
-    
-    return MemoryResponse(
-        id=uuid4(),
-        content=memory.content,
-        layer=memory.layer,
-        confidence=0.95,
-        entities_extracted=["entity1", "entity2"],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
+    try:
+        # 1. Generate embedding for content
+        embeddings_svc = get_embeddings_service()
+        embedding = await embeddings_svc.embed_text(memory.content)
+        embedding_list = embedding.tolist()
+        
+        # 2. Extract entities using Gemini
+        gemini = get_gemini_client()
+        entities_result = await gemini.extract_entities(memory.content)
+        entity_names = [e.get("name", "unknown") for e in entities_result.get("entities", [])]
+        
+        # 3. Generate node_id
+        memory_id = uuid4()
+        node_id = f"memory_{memory_id}"
+        
+        # 4. Store in PostgreSQL
+        postgres = get_postgres_driver()
+        
+        # Format embedding as pgvector string (no spaces)
+        embedding_str = "[" + ",".join(map(str, embedding_list)) + "]"
+        
+        # Convert metadata to JSON string
+        import json
+        metadata_json = json.dumps(memory.metadata or {})
+        
+        async with postgres.connection() as conn:
+            # Use text() style query with proper casting
+            await conn.execute(
+                f"""
+                INSERT INTO memory.embeddings 
+                (id, node_id, layer, user_id, tenant_id, content, embedding, metadata, confidence)
+                VALUES ($1, $2, $3, $4, $5, $6, '{embedding_str}'::vector, $7::jsonb, $8)
+                """,
+                memory_id,
+                node_id,
+                memory.layer,
+                user_id if memory.layer == "personal" else None,
+                memory.tenant_id if memory.layer == "tenant" else None,
+                memory.content,
+                metadata_json,
+                0.95 if memory.layer != "global" else 0.90,
+            )
+        
+        logger.info(
+            "memory_stored",
+            memory_id=str(memory_id),
+            layer=memory.layer,
+            entities_count=len(entity_names),
+        )
+        
+        return MemoryResponse(
+            id=memory_id,
+            content=memory.content,
+            layer=memory.layer,
+            confidence=0.95,
+            entities_extracted=entity_names[:10],  # Limit to first 10
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        
+    except Exception as e:
+        logger.error("memory_remember_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to store memory: {str(e)}")
 
 
 @router.post("/recall", response_model=list[MemorySearchResult])
@@ -103,14 +179,34 @@ async def recall(
         layers=request.layers,
     )
     
-    # TODO: Implement full recall flow:
-    # 1. Generate query embedding
-    # 2. Vector similarity search in PostgreSQL
-    # 3. Graph traversal from seed nodes in Neo4j
-    # 4. Hybrid scoring of results
-    # 5. Return ranked results
-    
-    return []
+    try:
+        # Use hybrid search pipeline
+        hybrid = get_hybrid_search()
+        results = await hybrid.search(
+            query=request.query,
+            user_id=user_id,
+            layers=request.layers or ["personal"],
+            limit=request.max_results,
+            min_confidence=request.min_confidence,
+        )
+        
+        # Convert ScoredNode to MemorySearchResult
+        return [
+            MemorySearchResult(
+                id=r.node_id if isinstance(r.node_id, UUID) else UUID(r.node_id) if len(str(r.node_id)) == 36 else uuid4(),
+                content=r.content,
+                layer=r.layer,
+                confidence=r.confidence,
+                score=r.final_score,
+                created_at=r.created_at if hasattr(r, 'created_at') and r.created_at else datetime.utcnow(),
+            )
+            for r in results
+        ]
+        
+    except Exception as e:
+        logger.error("memory_recall_failed", error=str(e))
+        # Return empty list instead of error for graceful degradation
+        return []
 
 
 @router.get("/search", response_model=list[MemorySearchResult])

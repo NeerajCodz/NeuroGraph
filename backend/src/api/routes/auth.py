@@ -65,16 +65,33 @@ async def register(user_data: UserCreate) -> UserResponse:
 @router.post("/login", response_model=TokenResponse)
 async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> TokenResponse:
     """Login and get access token."""
-    settings = get_settings()
+    from src.db.postgres import get_postgres_driver
+    import bcrypt
     
-    # TODO: Validate credentials against database
-    # For now, return tokens for any valid-looking credentials
+    settings = get_settings()
+    postgres = get_postgres_driver()
+    
+    # Validate credentials against database
+    user = await postgres.fetchrow(
+        "SELECT id, email, hashed_password FROM auth.users WHERE email = $1",
+        form_data.username,
+    )
+    
+    if not user:
+        raise AuthenticationError("Invalid email or password")
+    
+    # Verify password
+    if not bcrypt.checkpw(
+        form_data.password.encode('utf-8'),
+        user["hashed_password"].encode('utf-8'),
+    ):
+        raise AuthenticationError("Invalid email or password")
     
     access_token = create_access_token(
-        data={"sub": form_data.username, "type": "access"},
+        data={"sub": str(user["id"]), "email": user["email"], "type": "access"},
     )
     refresh_token = create_refresh_token(
-        data={"sub": form_data.username, "type": "refresh"},
+        data={"sub": str(user["id"]), "type": "refresh"},
     )
     
     return TokenResponse(
