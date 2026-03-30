@@ -1,2 +1,87 @@
+# ==============================
+# NeuroGraph repository .gitignore
+# ==============================
+
+# --- Environment & secrets ---
 .env
-.agents
+.env.*
+!.env.example
+!.env.*.example
+.envrc
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+
+# --- Local agent/design scratch dirs ---
+.agents/
+_reference-figma/
+
+# --- Dependencies ---
+/node_modules/
+frontend/node_modules/
+
+# --- Root build / cache artifacts ---
+/dist/
+/build/
+coverage/
+.cache/
+
+# --- Frontend artifacts ---
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+frontend/.cache/
+frontend/coverage/
+frontend/.eslintcache
+frontend/*.tsbuildinfo
+
+# --- Backend/Python environments & artifacts ---
+backend/.venv/
+backend/venv/
+backend/env/
+backend/.python-version
+backend/.mypy_cache/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.pyre/
+backend/.tox/
+backend/.nox/
+backend/.coverage
+backend/.coverage.*
+backend/htmlcov/
+backend/.eggs/
+backend/*.egg-info/
+backend/pip-wheel-metadata/
+
+# --- Python bytecode (all dirs) ---
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- IDE / OS ---
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo

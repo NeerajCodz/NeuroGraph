@@ -1,0 +1,34 @@
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+.python-version
+
+# Test & type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.tox/
+.nox/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# Packaging
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# Local env files
+.env
+.env.*
+!.env.example
