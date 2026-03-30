@@ -126,16 +126,20 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
         self,
         text: str | list[str],
         model: str | None = None,
+        output_dimensionality: int = 768,
     ) -> np.ndarray:
         """Generate embeddings for text.
         
         Args:
             text: Text or list of texts to embed
             model: Embedding model to use
+            output_dimensionality: Output embedding dimension (768, 1536, or 3072). Default 768.
             
         Returns:
             Numpy array of embeddings
         """
+        from google.genai import types
+        
         model_name = model or self._settings.gemini_model_embedding
         
         if isinstance(text, str):
@@ -147,6 +151,10 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
             response = await self._client.aio.models.embed_content(
                 model=model_name,
                 contents=texts,
+                config=types.EmbedContentConfig(
+                    output_dimensionality=output_dimensionality,
+                    task_type="RETRIEVAL_DOCUMENT"
+                ),
             )
             
             # Extract embeddings from response
