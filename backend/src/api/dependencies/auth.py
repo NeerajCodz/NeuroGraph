@@ -8,6 +8,7 @@ from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 
 from src.auth.jwt import verify_token
 from src.core.exceptions import AuthenticationError
+from src.db.postgres import get_postgres_driver
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -16,17 +17,25 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 async def get_current_user_id(
     token: Annotated[str, Depends(oauth2_scheme)],
 ) -> UUID:
-    """Get current user ID from JWT token."""
+    """Get current user ID from JWT token.
+    
+    The token subject contains the actual user_id UUID.
+    """
     try:
         payload = verify_token(token)
-        user_id = payload.get("sub")
-        if not user_id:
-            raise AuthenticationError("Invalid token payload")
-        # TODO: Validate user exists in database
-        # For now, generate a deterministic UUID from email
-        import hashlib
-        user_uuid = UUID(hashlib.md5(user_id.encode()).hexdigest())
-        return user_uuid
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise AuthenticationError("Invalid token payload: missing subject")
+        
+        # The subject is the actual user_id UUID
+        try:
+            user_id = UUID(user_id_str)
+        except ValueError:
+            raise AuthenticationError(f"Invalid user_id format: {user_id_str}")
+        
+        return user_id
+    except AuthenticationError:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

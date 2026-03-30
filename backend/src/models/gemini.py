@@ -1,11 +1,12 @@
 """Gemini API client for main LLM operations and embeddings."""
 
+import asyncio
 from typing import Any
 
 import numpy as np
 from google import genai
 from google.genai import types
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from src.core.config import get_settings
 from src.core.exceptions import EmbeddingError, GeminiError, RateLimitError
@@ -13,17 +14,34 @@ from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Rate limit: minimum delay between API calls (in seconds)
+MIN_API_DELAY = 0.5
+
 
 class GeminiClient:
-    """Async client for Google Gemini API."""
+    """Async client for Google Gemini API with rate limiting."""
 
     def __init__(self) -> None:
         self._settings = get_settings()
         self._client = genai.Client(
             api_key=self._settings.gemini_api_key.get_secret_value()
         )
+        self._last_call_time = 0.0
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30))
+    async def _rate_limit_delay(self) -> None:
+        """Ensure minimum delay between API calls."""
+        import time
+        now = time.time()
+        elapsed = now - self._last_call_time
+        if elapsed < MIN_API_DELAY:
+            await asyncio.sleep(MIN_API_DELAY - elapsed)
+        self._last_call_time = time.time()
+
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+    )
     async def generate(
         self,
         prompt: str,
@@ -49,6 +67,9 @@ class GeminiClient:
         model_name = model or self._settings.gemini_model_flash
         
         try:
+            # Apply rate limiting
+            await self._rate_limit_delay()
+            
             config = types.GenerateContentConfig(
                 temperature=temperature,
                 max_output_tokens=max_tokens,
@@ -121,7 +142,11 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
             model=model or self._settings.gemini_model_pro,
         )
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        retry=retry_if_exception_type(RateLimitError),
+    )
     async def embed(
         self,
         text: str | list[str],
@@ -148,6 +173,9 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
             texts = text
         
         try:
+            # Apply rate limiting
+            await self._rate_limit_delay()
+            
             response = await self._client.aio.models.embed_content(
                 model=model_name,
                 contents=texts,
