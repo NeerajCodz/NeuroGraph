@@ -1,0 +1,117 @@
+#Docker Compose configuration for NeuroGraph development environment.
+services:
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: neurograph-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_memory_heap_initial__size=512m
+      - NEO4J_dbms_memory_heap_max__size=1G
+      - NEO4J_dbms_memory_pagecache_size=512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7474"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - neurograph-network
+
+  # PostgreSQL with pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: neurograph-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=neurograph
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=neurograph
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neurograph -d neurograph"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - neurograph-network
+
+  # Redis for caching and queues
+  redis:
+    image: redis:7-alpine
+    container_name: neurograph-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - neurograph-network
+
+  # NeuroGraph Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: neurograph-api
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=development
+      - APP_DEBUG=true
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=password
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=neurograph
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=neurograph
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src:ro
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - neurograph-network
+
+volumes:
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  neurograph-network:
+    driver: bridge
