@@ -79,15 +79,17 @@ export default function Chat() {
   // Chat settings
   const [agentsEnabled, setAgentsEnabled] = useState(true);
   const [memoryLayer, setMemoryLayer] = useState<'personal' | 'workspace' | 'global'>('personal');
-  const [includeGlobal, setIncludeGlobal] = useState(true);
+  
 
+  const [includeGlobal, setIncludeGlobal] = useState(true);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
   // Processing status
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([]);
   const [currentStep, setCurrentStep] = useState<string>('');
   const [isProcessingExpanded, setIsProcessingExpanded] = useState(false);
 
   // Workspace for chat
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  
 
   // Load models on mount
   useEffect(() => {
@@ -108,32 +110,6 @@ export default function Chat() {
     loadModels();
   }, []);
 
-  // Load workspaces
-  useEffect(() => {
-    const loadWorkspaces = async () => {
-      try {
-        const result = await workspaceApi.list() as Workspace[];
-        setWorkspaces(Array.isArray(result) ? result : []);
-      } catch (err) {
-        console.error('Failed to load workspaces:', err);
-      }
-    };
-    loadWorkspaces();
-  }, []);
-
-  // Load conversations when workspace changes
-  useEffect(() => {
-    const loadConversations = async () => {
-      try {
-        const result = await conversationsApi.list(selectedWorkspace || undefined) as Conversation[];
-        setConversations(Array.isArray(result) ? result : []);
-      } catch (err) {
-        console.error('Failed to load conversations:', err);
-      }
-    };
-    loadConversations();
-  }, [selectedWorkspace]);
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -148,7 +124,15 @@ export default function Chat() {
     localStorage.setItem('ng_default_model', selectedModel);
   }, [selectedProvider, selectedModel]);
 
+  const [processingState, setProcessingState] = useState<{
+    isProcessing: boolean;
+    currentAction: string;
+    steps: ProcessingStep[];
+    expanded: boolean;
+  }>({ isProcessing: false, currentAction: '', steps: [], expanded: false });
+
   const simulateProcessingSteps = () => {
+    let currentIdx = 0;
     const steps: ProcessingStep[] = [
       { step_number: 1, action: 'Analyzing query', status: 'pending' },
       { step_number: 2, action: 'Searching memory', status: 'pending' },
@@ -156,21 +140,23 @@ export default function Chat() {
       { step_number: 4, action: 'Building context', status: 'pending' },
       { step_number: 5, action: 'Generating response', status: 'pending' },
     ];
-    setProcessingSteps(steps);
+    setProcessingState(prev => ({ ...prev, isProcessing: true, steps, currentAction: steps[0].action }));
     
     // Simulate progress
-    let currentIdx = 0;
     const interval = setInterval(() => {
-      if (currentIdx < steps.length) {
-        setProcessingSteps(prev => prev.map((s, i) => ({
+      setProcessingState(prev => {
+        if (currentIdx >= prev.steps.length) {
+          clearInterval(interval);
+          return { ...prev, isProcessing: false, currentAction: '' };
+        }
+        const updatedSteps = prev.steps.map((s, i) => ({
           ...s,
-          status: i < currentIdx ? 'completed' : i === currentIdx ? 'running' : 'pending'
-        })));
-        setCurrentStep(steps[currentIdx].action);
+          status: i < currentIdx ? 'completed' as const : i === currentIdx ? 'running' as const : 'pending' as const
+        }));
+        const newAction = prev.steps[currentIdx].action;
         currentIdx++;
-      } else {
-        clearInterval(interval);
-      }
+        return { ...prev, steps: updatedSteps, currentAction: newAction };
+      });
     }, 600);
     
     return () => clearInterval(interval);
@@ -462,116 +448,160 @@ export default function Chat() {
 
         {/* Input Area */}
         <div className="shrink-0 px-4 md:px-6 pb-4 pt-2">
-          {/* Chat Settings Row */}
-          <div className="flex flex-wrap gap-3 mb-3 items-center">
-            {/* Model Selector */}
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-white/50">Model:</Label>
-              <Select value={selectedProvider} onValueChange={(v) => { setSelectedProvider(v); setSelectedModel(getAvailableModels()[0]?.id || ''); }}>
-                <SelectTrigger className="w-24 h-8 text-xs bg-white/5 border-white/10 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0a0520] border-white/10">
-                  {providers.filter(p => p.is_available).map(p => (
-                    <SelectItem key={p.id} value={p.id} className="text-white text-xs">
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger className="w-40 h-8 text-xs bg-white/5 border-white/10 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0a0520] border-white/10 max-h-60">
-                  {getAvailableModels().map(m => (
-                    <SelectItem key={m.id} value={m.id} className="text-white text-xs">
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
-            {/* Memory Layer */}
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-white/50">Memory:</Label>
-              <Select value={memoryLayer} onValueChange={(v) => setMemoryLayer(v as 'personal' | 'workspace' | 'global')}>
-                <SelectTrigger className="w-28 h-8 text-xs bg-white/5 border-white/10 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0a0520] border-white/10">
-                  <SelectItem value="personal" className="text-white text-xs">
-                    <span className="flex items-center gap-1"><Brain className="w-3 h-3" /> Personal</span>
-                  </SelectItem>
-                  <SelectItem value="workspace" className="text-white text-xs">
-                    <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Workspace</span>
-                  </SelectItem>
-                  <SelectItem value="global" className="text-white text-xs">
-                    <span className="flex items-center gap-1"><Globe className="w-3 h-3" /> Global</span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Agents Toggle */}
-            <div className="flex items-center gap-2">
-              <Switch
-                id="agents"
-                checked={agentsEnabled}
-                onCheckedChange={setAgentsEnabled}
-                className="data-[state=checked]:bg-purple-500"
+          {/* Text Input & Output Panel */}
+          <div className="flex flex-col gap-2 relative max-w-full">
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="Message NeuroGraph..."
+                rows={1}
+                className="w-full resize-none rounded-3xl border border-white/10 bg-white/5 px-5 py-4 pr-14 text-[15px] text-white placeholder:text-white/40 focus:border-white/20 focus:outline-none focus:bg-white/[0.07] disabled:opacity-50 transition-all max-h-50 shadow-lg shadow-black/20"
+                disabled={isLoading}
+                style={{ minHeight: '52px' }}
               />
-              <Label htmlFor="agents" className="text-xs text-white/50 cursor-pointer flex items-center gap-1">
-                <Zap className="w-3 h-3" />
-                Agents
-              </Label>
+              <button
+                onClick={handleSend}
+                disabled={isLoading || !input.trim()}
+                className="absolute right-3 bottom-3 p-2.5 rounded-xl bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+              </button>
             </div>
 
-            {/* Include Global */}
-            <div className="flex items-center gap-2">
-              <Switch
-                id="includeGlobal"
-                checked={includeGlobal}
-                onCheckedChange={setIncludeGlobal}
-                className="data-[state=checked]:bg-green-500"
-              />
-              <Label htmlFor="includeGlobal" className="text-xs text-white/50 cursor-pointer">
-                +Global
-              </Label>
+            {/* Processing Dropdown Indicator */}
+            {processingState.isProcessing && (
+              <div className="relative z-10 w-full mt-2">
+                <div 
+                  onClick={() => setProcessingState(p => ({ ...p, expanded: !p.expanded }))}
+                  className="flex items-center justify-between px-4 py-2 rounded-2xl border border-purple-500/20 bg-purple-500/10 cursor-pointer hover:bg-purple-500/20 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                    <ShinyText
+                      text={`${processingState.currentAction}...`}
+                      speed={3}
+                      className="text-sm font-medium text-purple-200"        
+                    />
+                  </div>
+                  {processingState.expanded ? <ChevronUp className="w-4 h-4 text-white/50" /> : <ChevronDown className="w-4 h-4 text-white/50" />}
+                </div>
+                
+                {processingState.expanded && (
+                  <div className="absolute top-12 left-0 right-0 mt-2 p-4 rounded-2xl border border-white/10 bg-[#0c0618] shadow-2xl overflow-hidden">
+                    <div className="space-y-3">
+                      {processingState.steps.map((step, i) => (
+                        <div key={i} className="flex flex-col gap-1 text-xs">
+                          <div className="flex items-center gap-2">
+                            {step.status === 'completed' ? (
+                              <div className="w-4 h-4 rounded-full bg-green-500/20 flex items-center justify-center">
+                                <div className="w-2 h-2 rounded-full bg-green-500" />
+                              </div>
+                            ) : step.status === 'running' ? (
+                              <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                            ) : (
+                              <div className="w-4 h-4 rounded-full border border-white/20" />
+                            )}
+                            <span className={step.status === 'completed' ? 'text-white' : step.status === 'running' ? 'text-purple-200 font-medium' : 'text-white/40'}>
+                              {step.action}
+                            </span>
+                          </div>
+                          {step.result && step.status === 'completed' && (
+                            <div className="ml-6 p-2 rounded-lg bg-white/5 text-white/60 border border-white/5">
+                              {step.result}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Chat Settings Row (Below Textbox) */}
+            <div className="flex flex-wrap gap-4 mt-2 px-2 items-center">
+              {/* Model Selector */}
+              <div className="flex items-center gap-2">
+                <Select value={selectedProvider} onValueChange={(v) => { setSelectedProvider(v); setSelectedModel(getAvailableModels()[0]?.id || ''); }}>
+                  <SelectTrigger className="w-24 h-8 text-xs bg-transparent border-none text-white/70 hover:text-white rounded-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0a0520] border-white/10">        
+                    {providers.filter(p => p.is_available).map(p => (
+                      <SelectItem key={p.id} value={p.id} className="text-white text-xs">
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={selectedModel} onValueChange={setSelectedModel}>   
+                  <SelectTrigger className="w-36 h-8 text-xs bg-transparent border-none text-white/70 hover:text-white rounded-full">
+                    <Cpu className="w-3 h-3 mr-1" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0a0520] border-white/10 max-h-60">
+                    {getAvailableModels().map(m => (
+                      <SelectItem key={m.id} value={m.id} className="text-white text-xs">
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="h-4 w-px bg-white/10 mx-1"></div>
+              {/* Memory Layer */}
+              <div className="flex items-center gap-2">
+                <Select value={memoryLayer} onValueChange={(v) => setMemoryLayer(v as 'personal' | 'workspace' | 'global')}>
+                  <SelectTrigger className="w-32 h-8 text-xs bg-transparent border-none text-white/70 hover:text-white rounded-full">
+                    <Brain className="w-3 h-3 mr-1" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0a0520] border-white/10">        
+                    <SelectItem value="personal" className="text-white text-xs">  
+                      <span className="flex items-center gap-2">Personal</span>
+                    </SelectItem>
+                    <SelectItem value="workspace" className="text-white text-xs"> 
+                      <span className="flex items-center gap-2">Workspace</span>
+                    </SelectItem>
+                    <SelectItem value="global" className="text-white text-xs">    
+                      <span className="flex items-center gap-2">Global</span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="h-4 w-px bg-white/10 mx-1 ml-auto"></div>
+
+              {/* Agents Toggle */}
+              <div className="flex items-center gap-2 ">
+                <Label htmlFor="agents" className="text-xs text-white/70 cursor-pointer flex items-center gap-1.5 hover:text-white">
+                  <Zap className={`w-3 h-3 ${agentsEnabled ? "text-purple-400" : "text-white/40"}`} />
+                  Agents
+                </Label>
+                <Switch
+                  id="agents"
+                  checked={agentsEnabled}
+                  onCheckedChange={setAgentsEnabled}
+                  className="data-[state=checked]:bg-purple-500 scale-75"
+                />
+              </div>
             </div>
           </div>
-
-          {/* Text Input */}
-          <div className="relative max-w-full">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="Message NeuroGraph..."
-              rows={1}
-              className="w-full resize-none rounded-3xl border border-white/10 bg-white/5 px-5 py-4 pr-14 text-[15px] text-white placeholder:text-white/40 focus:border-white/20 focus:outline-none focus:bg-white/[0.07] disabled:opacity-50 transition-all max-h-50 shadow-lg shadow-black/20"
-              disabled={isLoading}
-              style={{ minHeight: '52px' }}
-            />
-            <button
-              onClick={handleSend}
-              disabled={isLoading || !input.trim()}
-              className="absolute right-3 bottom-3 p-2.5 rounded-xl bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              {isLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Send className="w-5 h-5" />
-              )}
-            </button>
-          </div>
-          <p className="text-center text-xs text-white/30 mt-3">
+          
+          <p className="text-center text-[10px] text-white/30 mt-4 font-light">
             NeuroGraph can make mistakes. Verify important information.
           </p>
         </div>
@@ -682,4 +712,9 @@ export default function Chat() {
     </div>
   );
 }
+
+
+
+
+
 

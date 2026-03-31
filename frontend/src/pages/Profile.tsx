@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate, Outlet } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   User, 
   Bot, 
@@ -31,7 +31,7 @@ import { modelsApi } from '@/services/api';
 interface ProfileNavItem {
   id: string;
   title: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   description: string;
 }
 
@@ -55,7 +55,6 @@ interface ProviderInfo {
 export default function Profile() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
   
   // Determine active section from URL
   const pathParts = location.pathname.split('/');
@@ -282,14 +281,12 @@ function AgentsSection({ onSave, saving, saved }: SectionProps) {
 function ModelsSection({ providers, onSave, saving, saved }: SectionProps & { providers: ProviderInfo[] }) {
   const [defaultProvider, setDefaultProvider] = useState(localStorage.getItem('ng_default_provider') || 'gemini');
   const [defaultModel, setDefaultModel] = useState(localStorage.getItem('ng_default_model') || 'gemini-2.0-flash');
-  const [orchestratorModel, setOrchestratorModel] = useState(localStorage.getItem('ng_orchestrator_model') || 'groq-llama-3.3-70b');
 
   const availableModels = providers.find(p => p.id === defaultProvider)?.models || [];
 
   const handleSaveModels = () => {
     localStorage.setItem('ng_default_provider', defaultProvider);
     localStorage.setItem('ng_default_model', defaultModel);
-    localStorage.setItem('ng_orchestrator_model', orchestratorModel);
     onSave();
   };
 
@@ -515,7 +512,6 @@ function SecuritySection({ onSave, saving, saved }: SectionProps) {
 }
 
 function SettingsSection({ onSave, saving, saved }: SectionProps) {
-  const [dataExport, setDataExport] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
 
   return (

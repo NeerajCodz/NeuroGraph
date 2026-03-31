@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { memoryApi } from '@/services/api';
 import { useNavigate } from 'react-router-dom';
+import GraphVisualization from '@/components/graph/GraphVisualization';
 import {
   Brain,
   Users,
@@ -63,6 +64,7 @@ export default function Memory() {
     setIsLoading(true);
     setError('');
     try {
+      if (activeTab === 'graph') { setMemories([]); setIsLoading(false); return; }
       if (query.trim()) {
         // Search mode
         const result = await memoryApi.recall(query, 50, [activeTab === 'workspace' ? 'tenant' : activeTab]) as MemoryItem[];
@@ -157,15 +159,6 @@ export default function Memory() {
     });
   };
 
-  const getTabCount = (tab: string) => {
-    switch (tab) {
-      case 'personal': return counts.personal;
-      case 'workspace': return counts.workspace;
-      case 'global': return counts.global;
-      default: return 0;
-    }
-  };
-
   return (
     <div className="h-full w-full space-y-6">
       {/* Header */}
@@ -200,36 +193,37 @@ export default function Memory() {
 
       {/* Memory Layer Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-lg grid-cols-3 bg-white/5 border border-white/10">
+                <TabsList className="flex w-full max-w-2xl bg-white/5 border border-white/10 p-1 rounded-xl">
           <TabsTrigger
             value="personal"
-            className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300"
+            className="flex-1 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 rounded-lg"
           >
             <Brain className="w-4 h-4 mr-2" />
             Personal
-            <Badge variant="outline" className="ml-2 text-xs border-purple-500/30 text-purple-300">
-              {counts.personal}
-            </Badge>
+            <Badge variant="outline" className="ml-2 text-xs border-purple-500/30 text-purple-300">{counts.personal}</Badge>
           </TabsTrigger>
           <TabsTrigger
             value="workspace"
-            className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-300"
+            className="flex-1 data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-300 rounded-lg"
           >
             <Users className="w-4 h-4 mr-2" />
             Workspace
-            <Badge variant="outline" className="ml-2 text-xs border-blue-500/30 text-blue-300">
-              {counts.workspace}
-            </Badge>
+            <Badge variant="outline" className="ml-2 text-xs border-blue-500/30 text-blue-300">{counts.workspace}</Badge>
           </TabsTrigger>
           <TabsTrigger
             value="global"
-            className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-300"
+            className="flex-1 data-[state=active]:bg-green-500/20 data-[state=active]:text-green-300 rounded-lg"
           >
             <Globe className="w-4 h-4 mr-2" />
             Global
-            <Badge variant="outline" className="ml-2 text-xs border-green-500/30 text-green-300">
-              {counts.global}
-            </Badge>
+            <Badge variant="outline" className="ml-2 text-xs border-green-500/30 text-green-300">{counts.global}</Badge>
+          </TabsTrigger>
+          <TabsTrigger
+            value="graph"
+            className="flex-1 data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-300 rounded-lg"
+          >
+            <Network className="w-4 h-4 mr-2" />
+            Knowledge Graph
           </TabsTrigger>
         </TabsList>
 
@@ -389,7 +383,13 @@ export default function Memory() {
             )}
           </div>
         </TabsContent>
+              <TabsContent value="graph" className="mt-6 flex-1 h-[600px] rounded-2xl border border-white/10 bg-[#0d0620]/65 overflow-hidden">
+          <GraphVisualization />
+        </TabsContent>
       </Tabs>
     </div>
   );
 }
+
+
+
