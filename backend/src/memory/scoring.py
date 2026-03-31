@@ -212,12 +212,17 @@ class HybridScorer:
             centrality_score = self.calculate_centrality_score(edge_count, max_edges)
             
             # Calculate temporal decay
-            from datetime import datetime
+            from datetime import datetime, timezone
             created_at = result.get("created_at")
             age_days = 0.0
             if created_at:
                 if isinstance(created_at, datetime):
-                    age_days = (datetime.utcnow() - created_at).days
+                    # Handle timezone-aware vs naive datetimes
+                    now = datetime.now(timezone.utc)
+                    if created_at.tzinfo is None:
+                        # Assume naive datetime is UTC
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    age_days = (now - created_at).days
             
             confidence = result.get("confidence", 1.0)
             temporal_score = self.calculate_temporal_score(age_days, confidence)

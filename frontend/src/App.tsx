@@ -1,4 +1,4 @@
-﻿import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AppSidebar } from '@/components/sidebar/AppSidebar';
@@ -31,28 +31,19 @@ function Layout() {
             <div className="absolute bottom-0 left-1/4 h-44 w-44 rounded-full bg-fuchsia-500/18 blur-[72px]" />
           </div>
 
-          {isChatRoute ? (
-            <div className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-2 md:left-4 md:top-4">
-              <SidebarTrigger className="pointer-events-auto size-9 rounded-full border border-white/15 bg-black/25 text-white/75 hover:bg-white/10 hover:text-white" />
-              <div className="rounded-full border border-white/10 bg-black/25 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-white/65 backdrop-blur-sm">
-                Intelligence Chat
+          <header className="relative z-20 flex shrink-0 items-center justify-between border-b border-white/10 bg-[#090512] px-4 py-3 md:px-6 md:py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <SidebarTrigger className="size-9 rounded-full border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white" />
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-[0.25em] text-white/45">NeuroGraph Workspace</p>
+                <h1 className="truncate text-lg font-semibold tracking-tight text-white md:text-xl">{pageTitle}</h1>
               </div>
             </div>
-          ) : (
-            <header className="relative z-20 flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3 md:px-6 md:py-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <SidebarTrigger className="size-9 rounded-full border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white" />
-                <div className="min-w-0">
-                  <p className="text-xs uppercase tracking-[0.25em] text-white/45">NeuroGraph Workspace</p>
-                  <h1 className="truncate text-lg font-semibold tracking-tight text-white md:text-xl">{pageTitle}</h1>
-                </div>
-              </div>
-              <div className="hidden items-center gap-2 rounded-full border border-purple-300/20 bg-purple-300/8 px-3 py-1 text-xs text-purple-100 md:flex">
-                <Sparkles className="size-3.5 text-purple-200" />
-                Real-time AI + Graph Intelligence
-              </div>
-            </header>
-          )}
+            <div className="hidden items-center gap-2 rounded-full border border-purple-300/20 bg-purple-300/8 px-3 py-1 text-xs text-purple-100 md:flex">
+              <Sparkles className="size-3.5 text-purple-200" />
+              Real-time AI + Graph Intelligence
+            </div>
+          </header>
 
           <div className={cn('relative z-10 flex-1 min-h-0', isChatRoute ? 'flex h-full min-h-0 overflow-hidden p-0' : 'overflow-y-auto p-2 md:p-4')}>
             <Routes>

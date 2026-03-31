@@ -223,6 +223,25 @@ async def search(
     )
 
 
+@router.get("/status", response_model=dict)
+async def memory_status(
+    user_id: Annotated[UUID, Depends(get_current_user_id)],
+) -> dict:
+    """Get memory statistics for current user."""
+    # TODO: Implement statistics
+    return {
+        "total_memories": 0,
+        "by_layer": {
+            "personal": 0,
+            "tenant": 0,
+            "global": 0,
+        },
+        "entity_count": 0,
+        "relationship_count": 0,
+    }
+
+
+# NOTE: Dynamic routes must come AFTER static routes to avoid matching issues
 @router.get("/{memory_id}", response_model=MemoryResponse)
 async def get_memory(
     memory_id: UUID,
@@ -252,21 +271,3 @@ async def forget(
     # TODO: Implement deletion from both Neo4j and PostgreSQL
     
     return {"message": f"Memory {memory_id} deleted"}
-
-
-@router.get("/status", response_model=dict)
-async def memory_status(
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
-) -> dict:
-    """Get memory statistics for current user."""
-    # TODO: Implement statistics
-    return {
-        "total_memories": 0,
-        "by_layer": {
-            "personal": 0,
-            "tenant": 0,
-            "global": 0,
-        },
-        "entity_count": 0,
-        "relationship_count": 0,
-    }

@@ -51,9 +51,10 @@ class Settings(BaseSettings):
 
     # Gemini API
     gemini_api_key: SecretStr = Field(default=...)
-    gemini_model_flash: str = "gemini-2.0-flash"
-    gemini_model_pro: str = "gemini-2.0-pro"
-    gemini_model_embedding: str = "text-embedding-004"
+    gemini_model_flash: str = "gemini-3-flash-preview"
+    gemini_model_pro: str = "gemini-2.5-pro"
+    gemini_model_lite: str = "gemini-3.1-flash-lite-preview"
+    gemini_model_embedding: str = "gemini-embedding-2-preview"
 
     # Groq API
     groq_api_key: SecretStr = Field(default=...)
@@ -77,7 +78,7 @@ class Settings(BaseSettings):
 
     # RAG Settings
     rag_embedding_dimension: int = 768
-    rag_similarity_threshold: float = 0.7
+    rag_similarity_threshold: float = 0.5  # Lowered from 0.7 for better recall
     rag_max_context_tokens: int = 4000
     rag_graph_budget_tokens: int = 2000
     rag_asset_budget_tokens: int = 800

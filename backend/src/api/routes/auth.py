@@ -129,17 +129,28 @@ async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
 ) -> UserResponse:
     """Get current authenticated user."""
-    payload = verify_token(token)
+    from src.db.postgres import get_postgres_driver
+    from uuid import UUID
     
-    # TODO: Fetch user from database
-    from uuid import uuid4
+    payload = verify_token(token)
+    user_id = payload["sub"]
+    
+    # Fetch user from database
+    postgres = get_postgres_driver()
+    user = await postgres.fetchrow(
+        "SELECT id, email, full_name, is_active, created_at FROM auth.users WHERE id = $1",
+        UUID(user_id),
+    )
+    
+    if not user:
+        raise AuthenticationError("User not found")
     
     return UserResponse(
-        id=uuid4(),
-        email=payload["sub"],
-        full_name=None,
-        is_active=True,
-        created_at=datetime.utcnow(),
+        id=user["id"],
+        email=user["email"],
+        full_name=user["full_name"],
+        is_active=user["is_active"],
+        created_at=user["created_at"],
     )
 
 

@@ -66,8 +66,8 @@ class HybridSearch:
             user_id=str(user_id),
         )
         
-        # Step 1: Generate query embedding
-        query_embedding = await self._embeddings.embed_text(query)
+        # Step 1: Generate query embedding (use RETRIEVAL_QUERY for better search)
+        query_embedding = await self._embeddings.embed_query(query)
         
         # Step 2: Vector search in PostgreSQL
         postgres = get_postgres_driver()

@@ -49,9 +49,17 @@ async def send_message(
 ) -> ChatResponse:
     """Send a chat message and get AI response.
     
-    This endpoint uses the Groq orchestrator to classify intent,
-    spawn appropriate agents, and generate a response using Gemini.
+    This endpoint:
+    1. Searches memory for relevant context
+    2. Builds structured context for the LLM
+    3. Generates response using Gemini with context
+    4. Returns response with reasoning path
     """
+    from datetime import timezone
+    from src.rag.hybrid_search import HybridSearch
+    from src.rag.context_assembly import ContextAssembler
+    from src.models.gemini import get_gemini_client
+    
     logger.info(
         "chat_message_received",
         user_id=str(user_id),
@@ -60,31 +68,104 @@ async def send_message(
     )
     
     conversation_id = message.conversation_id or uuid4()
+    reasoning_path = []
+    sources = []
     
-    # TODO: Implement full orchestration flow:
-    # 1. Classify intent with Groq
-    # 2. Spawn agents based on intent
-    # 3. Execute agents (memory read, graph traversal, etc.)
-    # 4. Build context from agent results
-    # 5. Generate response with Gemini
-    # 6. Update memory with new information
-    
-    # Placeholder response
-    return ChatResponse(
-        id=uuid4(),
-        conversation_id=conversation_id,
-        content="This is a placeholder response. Full orchestration coming soon.",
-        reasoning_path=[
-            {
-                "step": 1,
-                "action": "intent_classification",
-                "result": "read",
-            }
-        ],
-        sources=[],
-        confidence=0.8,
-        created_at=datetime.utcnow(),
-    )
+    try:
+        # Step 1: Search memory for relevant context
+        hybrid_search = HybridSearch()
+        layers = [message.layer]
+        if message.include_global:
+            layers.append("global")
+        
+        memory_results = await hybrid_search.search(
+            query=message.content,
+            user_id=user_id,
+            tenant_id=message.tenant_id,
+            layers=layers,
+            limit=10,
+            min_confidence=0.3,
+        )
+        
+        reasoning_path.append({
+            "step": 1,
+            "action": "memory_search",
+            "result": f"Found {len(memory_results)} relevant memories",
+            "details": {
+                "layers": layers,
+                "top_scores": [r.final_score for r in memory_results[:3]],
+            },
+        })
+        
+        # Step 2: Build context from memory results
+        context_assembler = ContextAssembler()
+        context = context_assembler.assemble(
+            scored_nodes=memory_results,
+        )
+        
+        reasoning_path.append({
+            "step": 2,
+            "action": "context_build",
+            "result": f"Built context with {len(memory_results)} nodes",
+        })
+        
+        # Step 3: Generate response with Gemini
+        gemini = get_gemini_client()
+        
+        if memory_results:
+            response_text = await gemini.generate_with_context(
+                query=message.content,
+                context=context,
+            )
+            confidence = min(0.95, max(r.confidence for r in memory_results))
+            
+            # Collect sources
+            sources = [
+                {
+                    "node_id": str(r.node_id),
+                    "content": r.content[:100],
+                    "score": r.final_score,
+                    "layer": r.layer,
+                }
+                for r in memory_results[:5]
+            ]
+        else:
+            # No memory context - generate without context
+            response_text = await gemini.generate(
+                prompt=f"Please help with this question: {message.content}",
+                system_instruction="You are NeuroGraph, a helpful AI assistant. Answer concisely.",
+            )
+            confidence = 0.5
+        
+        reasoning_path.append({
+            "step": 3,
+            "action": "generate_response",
+            "result": "Generated response using Gemini",
+            "model": "gemini-2.5-flash",
+        })
+        
+        return ChatResponse(
+            id=uuid4(),
+            conversation_id=conversation_id,
+            content=response_text,
+            reasoning_path=reasoning_path,
+            sources=sources,
+            confidence=confidence,
+            created_at=datetime.now(timezone.utc),
+        )
+        
+    except Exception as e:
+        logger.error("chat_generation_failed", error=str(e))
+        # Return error response
+        return ChatResponse(
+            id=uuid4(),
+            conversation_id=conversation_id,
+            content=f"I apologize, but I encountered an error: {str(e)[:100]}",
+            reasoning_path=[{"step": 1, "action": "error", "result": str(e)[:100]}],
+            sources=[],
+            confidence=0.1,
+            created_at=datetime.now(timezone.utc),
+        )
 
 
 @router.get("/conversations", response_model=list[dict])

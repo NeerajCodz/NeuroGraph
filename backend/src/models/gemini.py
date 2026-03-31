@@ -139,7 +139,7 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
         return await self.generate(
             prompt=full_prompt,
             system_instruction=system_instruction or default_system,
-            model=model or self._settings.gemini_model_pro,
+            model=model or self._settings.gemini_model_flash,
         )
 
     @retry(
@@ -152,6 +152,7 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
         text: str | list[str],
         model: str | None = None,
         output_dimensionality: int = 768,
+        task_type: str = "RETRIEVAL_DOCUMENT",
     ) -> np.ndarray:
         """Generate embeddings for text.
         
@@ -159,6 +160,7 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
             text: Text or list of texts to embed
             model: Embedding model to use
             output_dimensionality: Output embedding dimension (768, 1536, or 3072). Default 768.
+            task_type: Task type for embedding ("RETRIEVAL_DOCUMENT" or "RETRIEVAL_QUERY")
             
         Returns:
             Numpy array of embeddings
@@ -181,7 +183,7 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
                 contents=texts,
                 config=types.EmbedContentConfig(
                     output_dimensionality=output_dimensionality,
-                    task_type="RETRIEVAL_DOCUMENT"
+                    task_type=task_type,
                 ),
             )
             

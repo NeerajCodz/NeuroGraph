@@ -54,28 +54,44 @@ class EmbeddingsService:
         except Exception as e:
             logger.warning("embedding_cache_set_failed", error=str(e))
 
-    async def embed_text(self, text: str) -> np.ndarray:
+    async def embed_text(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> np.ndarray:
         """Generate embedding for a single text with caching.
         
         Args:
             text: Text to embed
+            task_type: Task type for embedding ("RETRIEVAL_DOCUMENT" or "RETRIEVAL_QUERY")
             
         Returns:
             Embedding vector as numpy array
         """
-        # Check cache first
-        cached = await self._get_cached_embedding(text)
-        if cached is not None:
-            return cached
+        # Check cache first (only for documents, not queries)
+        if task_type == "RETRIEVAL_DOCUMENT":
+            cached = await self._get_cached_embedding(text)
+            if cached is not None:
+                return cached
         
         # Generate new embedding
-        embedding = await self._gemini.embed(text)
+        embedding = await self._gemini.embed(text, task_type=task_type)
         result = embedding[0]
         
-        # Cache for future use
-        await self._set_cached_embedding(text, result)
+        # Cache for future use (only documents)
+        if task_type == "RETRIEVAL_DOCUMENT":
+            await self._set_cached_embedding(text, result)
         
         return result
+    
+    async def embed_query(self, query: str) -> np.ndarray:
+        """Generate embedding for a search query.
+        
+        Uses RETRIEVAL_QUERY task type for better search accuracy.
+        
+        Args:
+            query: Search query text
+            
+        Returns:
+            Embedding vector as numpy array
+        """
+        return await self.embed_text(query, task_type="RETRIEVAL_QUERY")
 
     async def embed_batch(self, texts: list[str]) -> np.ndarray:
         """Generate embeddings for multiple texts.
