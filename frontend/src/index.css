@@ -1,0 +1,218 @@
+@config "../tailwind.config.ts";
+@import "tailwindcss";
+@import "reactflow/dist/style.css";
+@reference "tailwindcss/utilities";
+
+@layer base {
+  :root {
+    --background: 247 52% 4%;
+    --foreground: 260 36% 97%;
+    --card: 252 46% 8%;
+    --card-foreground: 260 30% 95%;
+    --popover: 250 44% 7%;
+    --popover-foreground: 260 30% 95%;
+    --primary: 272 90% 68%;
+    --primary-foreground: 248 55% 8%;
+    --secondary: 252 33% 18%;
+    --secondary-foreground: 260 24% 95%;
+    --muted: 251 30% 14%;
+    --muted-foreground: 258 16% 72%;
+    --accent: 276 68% 22%;
+    --accent-foreground: 260 34% 98%;
+    --destructive: 0 84% 62%;
+    --destructive-foreground: 260 34% 98%;
+    --border: 254 35% 20%;
+    --input: 254 36% 16%;
+    --ring: 273 92% 72%;
+    --radius: 0.85rem;
+
+    --sidebar: 248 47% 7%;
+    --sidebar-foreground: 260 24% 90%;
+    --sidebar-primary: 272 90% 68%;
+    --sidebar-primary-foreground: 247 52% 5%;
+    --sidebar-accent: 256 35% 15%;
+    --sidebar-accent-foreground: 264 26% 95%;
+    --sidebar-border: 254 38% 19%;
+    --sidebar-ring: 276 94% 74%;
+
+    /* Custom colors for visualizations */
+    --viz-blue: 231 89% 72%;
+    --viz-purple: 276 92% 74%;
+    --viz-cyan: 199 92% 67%;
+    --viz-green: 154 80% 56%;
+    --viz-orange: 25 94% 66%;
+    --viz-pink: 312 83% 68%;
+    --viz-red: 0 82% 62%;
+    --viz-lime: 87 80% 58%;
+  }
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+    background-image:
+      radial-gradient(circle at 20% 12%, rgba(135, 82, 255, 0.34) 0, transparent 36%),
+      radial-gradient(circle at 82% 78%, rgba(192, 76, 255, 0.2) 0, transparent 42%),
+      linear-gradient(168deg, #05030f 0%, #120724 46%, #06020f 100%);
+    overflow: hidden;
+  }
+}
+
+@layer utilities {
+  .app-shell {
+    @apply relative isolate h-full w-full overflow-hidden;
+  }
+
+  .app-shell::before,
+  .app-shell::after {
+    content: "";
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(88px);
+    z-index: -1;
+  }
+
+  .app-shell::before {
+    width: 22rem;
+    height: 22rem;
+    left: -6rem;
+    top: -4rem;
+    background: rgba(145, 68, 255, 0.42);
+  }
+
+  .app-shell::after {
+    width: 28rem;
+    height: 28rem;
+    right: -10rem;
+    bottom: -8rem;
+    background: rgba(102, 46, 220, 0.28);
+  }
+
+  .glass-panel {
+    background: linear-gradient(130deg, rgba(29, 13, 57, 0.78), rgba(14, 8, 30, 0.8));
+    backdrop-filter: blur(18px);
+  }
+
+  .purple-stroke {
+    box-shadow: inset 0 0 0 1px rgba(180, 132, 255, 0.22);
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-sm;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+}
+
+/* React Flow custom styles */
+.react-flow {
+  @apply bg-transparent text-foreground;
+}
+
+.react-flow__node {
+  @apply font-medium;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2.25;
+  stroke: rgba(204, 176, 255, 0.6);
+}
+
+.react-flow__controls {
+  @apply bg-card/90 border border-border rounded-xl;
+  backdrop-filter: blur(10px);
+}
+
+.react-flow__controls-button {
+  @apply bg-card/90 border-border text-foreground;
+}
+
+.react-flow__controls-button:hover {
+  @apply bg-accent;
+}
+
+/* Custom animations */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Gradient backgrounds */
+.gradient-primary {
+  background: linear-gradient(140deg, rgba(160, 92, 255, 0.95), rgba(92, 52, 198, 0.9));
+}
+
+.gradient-secondary {
+  background: linear-gradient(135deg, rgba(71, 40, 138, 0.65), rgba(137, 65, 219, 0.34));
+}
+
+.gradient-accent {
+  background: linear-gradient(135deg, rgba(233, 212, 255, 0.18), rgba(190, 122, 255, 0.06));
+}
