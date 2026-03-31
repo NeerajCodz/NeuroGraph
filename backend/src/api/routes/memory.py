@@ -223,51 +223,160 @@ async def search(
     )
 
 
+@router.get("/list", response_model=list[MemorySearchResult])
+async def list_memories(
+    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    layer: str = Query(default="personal", pattern="^(personal|tenant|global)$"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> list[MemorySearchResult]:
+    """List all memories for a specific layer."""
+    logger.info("memory_list", user_id=str(user_id), layer=layer)
+    
+    postgres = get_postgres_driver()
+    
+    async with postgres.connection() as conn:
+        if layer == "personal":
+            rows = await conn.fetch(
+                """
+                SELECT id, node_id, content, layer, confidence, created_at
+                FROM memory.embeddings
+                WHERE user_id = $1 AND layer = 'personal'
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+                """,
+                user_id,
+                limit,
+                offset,
+            )
+        elif layer == "global":
+            rows = await conn.fetch(
+                """
+                SELECT id, node_id, content, layer, confidence, created_at
+                FROM memory.embeddings
+                WHERE layer = 'global'
+                ORDER BY created_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+            )
+        else:  # tenant/workspace
+            rows = await conn.fetch(
+                """
+                SELECT id, node_id, content, layer, confidence, created_at
+                FROM memory.embeddings
+                WHERE layer = 'tenant'
+                ORDER BY created_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+            )
+    
+    return [
+        MemorySearchResult(
+            id=row["id"],
+            content=row["content"],
+            layer=row["layer"],
+            confidence=row["confidence"],
+            score=1.0,  # No search score for listing
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+@router.get("/count")
+async def memory_count(
+    user_id: Annotated[UUID, Depends(get_current_user_id)],
+) -> dict:
+    """Get memory counts by layer."""
+    postgres = get_postgres_driver()
+    
+    async with postgres.connection() as conn:
+        personal_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM memory.embeddings WHERE user_id = $1 AND layer = 'personal'",
+            user_id,
+        )
+        
+        tenant_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM memory.embeddings WHERE layer = 'tenant'",
+        )
+        
+        global_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM memory.embeddings WHERE layer = 'global'",
+        )
+    
+    return {
+        "personal": personal_count or 0,
+        "tenant": tenant_count or 0,
+        "workspace": tenant_count or 0,  # Alias for frontend
+        "global": global_count or 0,
+        "total": (personal_count or 0) + (tenant_count or 0) + (global_count or 0),
+    }
+
+
 @router.get("/status", response_model=dict)
 async def memory_status(
     user_id: Annotated[UUID, Depends(get_current_user_id)],
 ) -> dict:
     """Get memory statistics for current user."""
-    # TODO: Implement statistics
+    # Get counts and return as status
+    counts = await memory_count(user_id)
     return {
-        "total_memories": 0,
+        "total_memories": counts["total"],
         "by_layer": {
-            "personal": 0,
-            "tenant": 0,
-            "global": 0,
+            "personal": counts["personal"],
+            "tenant": counts["tenant"],
+            "global": counts["global"],
         },
-        "entity_count": 0,
-        "relationship_count": 0,
+        "entity_count": 0,  # TODO: Implement
+        "relationship_count": 0,  # TODO: Implement
     }
 
 
-# NOTE: Dynamic routes must come AFTER static routes to avoid matching issues
-@router.get("/{memory_id}", response_model=MemoryResponse)
+# Path parameter routes at END to avoid conflicts
+@router.get("/{id}", response_model=MemoryResponse)
 async def get_memory(
-    memory_id: UUID,
+    id: UUID,
     user_id: Annotated[UUID, Depends(get_current_user_id)],
 ) -> MemoryResponse:
     """Get a specific memory by ID."""
-    # TODO: Fetch from database with access check
+    postgres = get_postgres_driver()
+    async with postgres.connection() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, content, layer, confidence, created_at, updated_at FROM memory.embeddings WHERE id = $1",
+            id,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Memory not found")
     return MemoryResponse(
-        id=memory_id,
-        content="Memory content",
-        layer="personal",
-        confidence=0.9,
+        id=row["id"],
+        content=row["content"],
+        layer=row["layer"],
+        confidence=row["confidence"],
         entities_extracted=[],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
 
 
-@router.delete("/{memory_id}")
+@router.delete("/{id}")
 async def forget(
-    memory_id: UUID,
+    id: UUID,
     user_id: Annotated[UUID, Depends(get_current_user_id)],
 ) -> dict[str, str]:
     """Delete a memory (forget)."""
-    logger.info("memory_forget", user_id=str(user_id), memory_id=str(memory_id))
+    logger.info("memory_forget", user_id=str(user_id), memory_id=str(id))
     
-    # TODO: Implement deletion from both Neo4j and PostgreSQL
+    postgres = get_postgres_driver()
     
-    return {"message": f"Memory {memory_id} deleted"}
+    async with postgres.connection() as conn:
+        result = await conn.execute(
+            "DELETE FROM memory.embeddings WHERE id = $1 AND (user_id = $2 OR layer = 'global')",
+            id,
+            user_id,
+        )
+    
+    return {"message": f"Memory {id} deleted"}

@@ -92,7 +92,7 @@ export default function Landing() {
             transition={{ duration: 0.8, delay: 0.1 }}
             className="text-5xl md:text-8xl font-black tracking-tighter mb-6 text-transparent bg-clip-text bg-gradient-to-br from-white via-purple-100 to-purple-400/80 filter drop-shadow-[0_0_30px_rgba(82,39,255,0.4)]"
           >
-            Intelligence at <br /> Graph Speed
+            Neural-inspired <br />  memory system <br />
           </motion.h1>
 
           <BlurText

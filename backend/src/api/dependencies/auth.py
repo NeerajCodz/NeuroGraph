@@ -77,3 +77,37 @@ async def get_current_user_id_from_api_key(
     import hashlib
     user_uuid = UUID(hashlib.md5(api_key.encode()).hexdigest())
     return user_uuid
+
+
+async def get_current_user(
+    user_id: Annotated[UUID, Depends(get_current_user_id)],
+) -> dict:
+    """Get current user data from database.
+    
+    Returns user dict with id, email, full_name, etc.
+    """
+    postgres = get_postgres_driver()
+    
+    async with postgres.connection() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, email, full_name, is_active, is_superuser, created_at
+            FROM auth.users WHERE id = $1
+            """,
+            user_id,
+        )
+    
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    
+    return {
+        "id": row["id"],
+        "email": row["email"],
+        "full_name": row["full_name"],
+        "is_active": row["is_active"],
+        "is_superuser": row["is_superuser"],
+        "created_at": row["created_at"],
+    }

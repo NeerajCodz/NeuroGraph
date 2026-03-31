@@ -85,22 +85,35 @@ export const authApi = {
 
 // Memory API
 export const memoryApi = {
-  async store(content: string, layer: 'personal' | 'tenant' | 'global' = 'personal') {
+  async store(content: string, layer: 'personal' | 'workspace' | 'global' = 'personal') {
+    // Map workspace to tenant for backend compatibility
+    const backendLayer = layer === 'workspace' ? 'tenant' : layer;
     return request('/memory/remember', {
       method: 'POST',
-      body: JSON.stringify({ content, layer }),
+      body: JSON.stringify({ content, layer: backendLayer }),
     });
   },
   
   async recall(query: string, limit = 10, layers?: string[]) {
+    // Map workspace to tenant
+    const backendLayers = layers?.map(l => l === 'workspace' ? 'tenant' : l);
     return request('/memory/recall', {
       method: 'POST',
-      body: JSON.stringify({ query, limit, layers }),
+      body: JSON.stringify({ query, max_results: limit, layers: backendLayers }),
     });
   },
   
   async search(query: string, limit = 20) {
     return request(`/memory/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+  },
+  
+  async list(layer: 'personal' | 'workspace' | 'global' = 'personal', limit = 50, offset = 0) {
+    const backendLayer = layer === 'workspace' ? 'tenant' : layer;
+    return request(`/memory/list?layer=${backendLayer}&limit=${limit}&offset=${offset}`);
+  },
+  
+  async getCount() {
+    return request('/memory/count');
   },
   
   async getStatus() {
@@ -121,30 +134,123 @@ export const chatApi = {
   async sendMessage(
     content: string,
     conversationId?: string,
-    layer: 'personal' | 'tenant' | 'global' = 'personal',
+    layer: 'personal' | 'workspace' | 'global' = 'personal',
     includeGlobal = false,
     provider?: string,
-    model?: string
+    model?: string,
+    agentsEnabled = true,
+    workspaceId?: string
   ) {
     return request('/chat/message', {
       method: 'POST',
       body: JSON.stringify({
         content,
         conversation_id: conversationId,
+        workspace_id: workspaceId,
         layer,
         include_global: includeGlobal,
         provider,
         model,
+        agents_enabled: agentsEnabled,
       }),
     });
   },
   
-  async getConversations(limit = 20, offset = 0) {
-    return request(`/chat/conversations?limit=${limit}&offset=${offset}`);
+  async getConversations(workspaceId?: string, limit = 50, offset = 0) {
+    const params = new URLSearchParams();
+    if (workspaceId) params.append('workspace_id', workspaceId);
+    params.append('limit', String(limit));
+    params.append('offset', String(offset));
+    return request(`/chat/conversations?${params}`);
   },
   
   async getConversation(conversationId: string) {
     return request(`/chat/conversations/${conversationId}`);
+  },
+  
+  async deleteConversation(conversationId: string) {
+    return request(`/chat/conversations/${conversationId}`, { method: 'DELETE' });
+  },
+};
+
+// Workspace API
+export const workspaceApi = {
+  async create(name: string, description?: string, isPublic = false) {
+    return request('/workspaces', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, is_public: isPublic }),
+    });
+  },
+  
+  async list(includeShared = true) {
+    return request(`/workspaces?include_shared=${includeShared}`);
+  },
+  
+  async get(workspaceId: string) {
+    return request(`/workspaces/${workspaceId}`);
+  },
+  
+  async update(workspaceId: string, data: { name?: string; description?: string; is_public?: boolean }) {
+    return request(`/workspaces/${workspaceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+  
+  async delete(workspaceId: string) {
+    return request(`/workspaces/${workspaceId}`, { method: 'DELETE' });
+  },
+  
+  async join(workspaceId: string, shareToken: string) {
+    return request(`/workspaces/${workspaceId}/join?share_token=${shareToken}`, {
+      method: 'POST',
+    });
+  },
+  
+  async getMembers(workspaceId: string) {
+    return request(`/workspaces/${workspaceId}/members`);
+  },
+  
+  async regenerateToken(workspaceId: string) {
+    return request(`/workspaces/${workspaceId}/regenerate-token`, { method: 'POST' });
+  },
+};
+
+// Conversations API (direct access)
+export const conversationsApi = {
+  async create(workspaceId?: string, title?: string) {
+    return request('/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ workspace_id: workspaceId, title }),
+    });
+  },
+  
+  async list(workspaceId?: string, includeArchived = false, limit = 50) {
+    const params = new URLSearchParams();
+    if (workspaceId) params.append('workspace_id', workspaceId);
+    params.append('include_archived', String(includeArchived));
+    params.append('limit', String(limit));
+    return request(`/conversations?${params}`);
+  },
+  
+  async get(conversationId: string, includeMessages = true) {
+    return request(`/conversations/${conversationId}?include_messages=${includeMessages}`);
+  },
+  
+  async update(conversationId: string, data: { title?: string; is_pinned?: boolean; is_archived?: boolean }) {
+    return request(`/conversations/${conversationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+  
+  async delete(conversationId: string) {
+    return request(`/conversations/${conversationId}`, { method: 'DELETE' });
+  },
+  
+  async getSteps(conversationId: string, messageId?: string) {
+    const params = messageId ? `?message_id=${messageId}` : '';
+    return request(`/conversations/${conversationId}/steps${params}`);
   },
 };
 
