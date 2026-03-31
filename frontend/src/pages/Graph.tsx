@@ -1,9 +1,39 @@
+import { useState, useEffect } from 'react';
 import GraphVisualization from '../components/graph/GraphVisualization';
 import { SpotlightCard } from '@/components/reactbits/SpotlightCard';
 import { BlurText } from '@/components/reactbits/BlurText';
-import { Activity, GitBranch, ShieldAlert } from 'lucide-react';
+import { Activity, Loader2 } from 'lucide-react';
+import { graphApi } from '@/services/api';
+
+interface CentralityData {
+  [key: string]: number;
+}
 
 export default function Graph() {
+  const [centrality, setCentrality] = useState<CentralityData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const loadCentrality = async () => {
+      setIsLoading(true);
+      try {
+        const data = await graphApi.getCentrality() as CentralityData;
+        setCentrality(data);
+      } catch (err) {
+        console.error('Failed to load centrality:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadCentrality();
+  }, []);
+
+  const topNodes = centrality
+    ? Object.entries(centrality)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+    : [];
+
   return (
     <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
       <section className="flex min-h-0 flex-col gap-3 rounded-3xl border border-white/10 bg-[#0d0620]/65 p-4 backdrop-blur-sm">
@@ -26,30 +56,45 @@ export default function Graph() {
 
       <aside className="hidden min-h-0 flex-col gap-4 xl:flex">
         <SpotlightCard className="rounded-3xl border-white/10 bg-[#110829]/90 p-5" spotlightColor="rgba(182, 126, 255, 0.22)">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Conflict Watch</p>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Centrality Scores</p>
           <div className="mt-3 space-y-2 text-sm text-white/80">
-            <div className="flex items-center justify-between rounded-2xl bg-white/5 px-3 py-2">
-              <span className="flex items-center gap-2"><ShieldAlert className="size-4 text-rose-300" />High risk</span>
-              <strong className="text-rose-200">2 nodes</strong>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl bg-white/5 px-3 py-2">
-              <span className="flex items-center gap-2"><GitBranch className="size-4 text-purple-300" />Conflict edges</span>
-              <strong className="text-purple-200">5 links</strong>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl bg-white/5 px-3 py-2">
-              <span className="flex items-center gap-2"><Activity className="size-4 text-cyan-300" />Signal quality</span>
-              <strong className="text-cyan-200">0.92</strong>
-            </div>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
+              </div>
+            ) : topNodes.length > 0 ? (
+              topNodes.map(([name, score]) => (
+                <div key={name} className="flex items-center justify-between rounded-2xl bg-white/5 px-3 py-2">
+                  <span className="flex items-center gap-2 truncate">
+                    <Activity className="size-4 text-purple-300 flex-shrink-0" />
+                    <span className="truncate">{name}</span>
+                  </span>
+                  <strong className="text-purple-200 ml-2">{score.toFixed(2)}</strong>
+                </div>
+              ))
+            ) : (
+              <p className="text-white/40 text-center py-4">No centrality data</p>
+            )}
           </div>
         </SpotlightCard>
 
         <SpotlightCard className="rounded-3xl border-white/10 bg-[#0c0620]/92 p-5" spotlightColor="rgba(114, 77, 232, 0.26)">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Legend</p>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Entity Types</p>
           <ul className="mt-3 space-y-2 text-sm text-white/80">
-            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#b084ff]" />Core intelligence</li>
-            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#dd8cff]" />Projects / nodes</li>
-            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#7fb5ff]" />Teams / owners</li>
-            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#ff8d9d]" />Risk vectors</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#7fb5ff]" />Person</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#b084ff]" />Organization</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#dd8cff]" />Project</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#7bffa3]" />Technology</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#ff8d9d]" />Concept</li>
+          </ul>
+        </SpotlightCard>
+
+        <SpotlightCard className="rounded-3xl border-white/10 bg-[#0c0620]/92 p-5" spotlightColor="rgba(114, 77, 232, 0.26)">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Memory Layers</p>
+          <ul className="mt-3 space-y-2 text-sm text-white/80">
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#b084ff]" />Personal</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#7fb5ff]" />Tenant</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-[#7bffa3]" />Global</li>
           </ul>
         </SpotlightCard>
       </aside>
