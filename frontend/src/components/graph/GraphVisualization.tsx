@@ -40,6 +40,7 @@ export default function GraphVisualization() {
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<GraphLink | null>(null);
   const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; links: GraphLink[] } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -120,7 +121,12 @@ export default function GraphVisualization() {
         .join('line')
         .attr('stroke', 'rgba(210, 176, 255, 0.62)')
         .attr('stroke-width', (d) => 1.3 + d.weight * 2)
-        .attr('stroke-linecap', 'round');
+        .attr('stroke-linecap', 'round')
+        .attr('cursor', 'pointer')
+        .on('click', (_, d) => {
+          setSelectedEdge(d);
+          setSelectedNode(null);
+        });
 
       const linkLabel = labelLayer
         .selectAll('text.link-label')
@@ -131,7 +137,12 @@ export default function GraphVisualization() {
         .attr('fill', 'rgba(236, 220, 255, 0.62)')
         .attr('font-size', 9)
         .attr('text-anchor', 'middle')
-        .attr('letter-spacing', '0.08em');
+        .attr('letter-spacing', '0.08em')
+        .attr('cursor', 'pointer')
+        .on('click', (_, d) => {
+          setSelectedEdge(d);
+          setSelectedNode(null);
+        });
 
       const getNodeColor = (d: GraphNode) => typeColors[d.type] || typeColors.default;
 
@@ -140,7 +151,10 @@ export default function GraphVisualization() {
         .data(nodes)
         .join('g')
         .attr('cursor', 'pointer')
-        .on('click', (_, d) => setSelectedNode(d));
+        .on('click', (_, d) => {
+          setSelectedNode(d);
+          setSelectedEdge(null);
+        });
 
       node
         .append('circle')
@@ -342,6 +356,41 @@ export default function GraphVisualization() {
         </div>
       )}
 
+      {selectedEdge && (
+        <div className="absolute right-4 top-4 w-72 rounded-2xl border border-cyan-500/30 bg-[#0b1829]/92 p-3 text-white shadow-xl backdrop-blur-md">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-400/60">Relationship</p>
+          <h3 className="mt-1 text-base font-semibold text-cyan-100">{selectedEdge.relation}</h3>
+          <div className="mt-3 space-y-2 text-xs text-white/75">
+            <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
+              <span>From</span>
+              <strong className="text-purple-200">{typeof selectedEdge.source === 'object' ? selectedEdge.source.label : selectedEdge.source}</strong>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
+              <span>To</span>
+              <strong className="text-purple-200">{typeof selectedEdge.target === 'object' ? selectedEdge.target.label : selectedEdge.target}</strong>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
+              <span>Confidence</span>
+              <strong className={`${selectedEdge.weight >= 0.7 ? 'text-green-400' : selectedEdge.weight >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
+                {(selectedEdge.weight * 100).toFixed(0)}%
+              </strong>
+            </div>
+            {selectedEdge.reason && (
+              <div className="rounded-xl bg-cyan-500/10 px-2 py-2 border border-cyan-500/20">
+                <span className="text-[10px] uppercase tracking-wider text-cyan-400/70">Reasoning</span>
+                <p className="mt-1 text-cyan-100/90 text-xs leading-relaxed">{selectedEdge.reason}</p>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setSelectedEdge(null)}
+            className="mt-3 w-full text-center text-xs text-white/40 hover:text-white/60"
+          >
+            Click to dismiss
+          </button>
+        </div>
+      )}
+
       <div className="absolute bottom-4 right-4 flex gap-2 rounded-full border border-white/15 bg-black/30 p-1.5 opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
         <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-white/80 hover:bg-white/12 hover:text-white" onClick={handleZoomOut}>
           <ZoomOut className="h-4 w-4" />
@@ -356,4 +405,3 @@ export default function GraphVisualization() {
     </div>
   );
 }
-
