@@ -51,17 +51,25 @@ class Settings(BaseSettings):
 
     # Gemini API
     gemini_api_key: SecretStr = Field(default=...)
-    gemini_model_flash: str = "gemini-3-flash-preview"
+    gemini_model_flash: str = "gemini-2.0-flash"
     gemini_model_pro: str = "gemini-2.5-pro"
-    gemini_model_lite: str = "gemini-3.1-flash-lite-preview"
-    gemini_model_embedding: str = "gemini-embedding-2-preview"
+    gemini_model_lite: str = "gemini-2.0-flash-lite"
+    gemini_model_embedding: str = "text-embedding-004"
 
     # Groq API
     groq_api_key: SecretStr = Field(default=...)
     groq_model: str = "llama-3.3-70b-versatile"
 
+    # NVIDIA API (build.nvidia.com)
+    nvidia_api_key: SecretStr | None = None
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+
     # Tavily API
     tavily_api_key: SecretStr | None = None
+    
+    # Default model provider and model for agents
+    default_llm_provider: str = "gemini"
+    default_llm_model: str = "gemini-2.0-flash"
 
     # JWT Auth
     jwt_secret_key: SecretStr = Field(default=...)

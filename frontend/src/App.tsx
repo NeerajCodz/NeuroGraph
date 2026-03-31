@@ -38,7 +38,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function Layout() {
   const location = useLocation();
   useAuth(); // Ensure user is authenticated
-  const isChatRoute = location.pathname.startsWith('/chat');
+  const isChatRoute = location.pathname.startsWith('/chat') || location.pathname === '/';
   const pageTitle = useMemo(() => {
     if (location.pathname.startsWith('/graph')) return 'Knowledge Graph';
     if (location.pathname.startsWith('/memory')) return 'Memory Store';
@@ -71,10 +71,10 @@ function Layout() {
             </div>
           </header>
 
-          <div className={cn('relative z-10 flex-1 min-h-0', isChatRoute ? 'flex h-full min-h-0 overflow-hidden p-0' : 'overflow-y-auto p-2 md:p-4')}>
+          <div className={cn('relative z-10 flex-1 min-h-0 flex flex-col w-full', isChatRoute ? 'overflow-hidden p-0' : 'overflow-y-auto p-2 md:p-4')}>
             <Routes>
-              <Route path="/" element={<Navigate to="/chat" replace />} />
-              <Route path="/chat" element={<div className="flex h-full min-h-0 w-full"><Chat /></div>} />
+              <Route path="/" element={<Navigate to="/chat" replace />} />      
+              <Route path="/chat" element={<Chat />} />
               <Route path="/graph" element={<Graph />} />
               <Route path="/memory" element={<Memory />} />
               <Route path="/settings" element={<Settings />} />

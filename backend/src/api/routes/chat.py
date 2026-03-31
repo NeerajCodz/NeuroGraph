@@ -21,6 +21,9 @@ class ChatMessage(BaseModel):
     layer: str = Field(default="personal", pattern="^(personal|tenant|global)$")
     tenant_id: UUID | None = None
     include_global: bool = False
+    # Model selection - optional, uses defaults if not specified
+    provider: str | None = Field(default=None, description="LLM provider: gemini, nvidia, groq")
+    model: str | None = Field(default=None, description="Model ID to use")
 
 
 class ChatResponse(BaseModel):
@@ -32,6 +35,8 @@ class ChatResponse(BaseModel):
     sources: list[dict] | None = None
     confidence: float
     created_at: datetime
+    model_used: str | None = None
+    provider_used: str | None = None
 
 
 class ConversationHistory(BaseModel):
@@ -52,19 +57,32 @@ async def send_message(
     This endpoint:
     1. Searches memory for relevant context
     2. Builds structured context for the LLM
-    3. Generates response using Gemini with context
+    3. Generates response using selected LLM provider/model
     4. Returns response with reasoning path
+    
+    Model selection:
+    - provider: gemini | nvidia | groq (default: from config)
+    - model: specific model ID (default: provider's default)
     """
     from datetime import timezone
     from src.rag.hybrid_search import HybridSearch
     from src.rag.context_assembly import ContextAssembler
-    from src.models.gemini import get_gemini_client
+    from src.models.unified_llm import get_unified_llm
+    from src.core.config import get_settings
+    
+    settings = get_settings()
+    
+    # Determine provider and model
+    provider = message.provider or settings.default_llm_provider
+    model = message.model or settings.default_llm_model
     
     logger.info(
         "chat_message_received",
         user_id=str(user_id),
         layer=message.layer,
         content_length=len(message.content),
+        provider=provider,
+        model=model,
     )
     
     conversation_id = message.conversation_id or uuid4()
@@ -109,13 +127,15 @@ async def send_message(
             "result": f"Built context with {len(memory_results)} nodes",
         })
         
-        # Step 3: Generate response with Gemini
-        gemini = get_gemini_client()
+        # Step 3: Generate response with unified LLM
+        llm = get_unified_llm()
         
         if memory_results:
-            response_text = await gemini.generate_with_context(
+            response_text = await llm.generate_with_context(
                 query=message.content,
                 context=context,
+                provider=provider,
+                model=model,
             )
             confidence = min(0.95, max(r.confidence for r in memory_results))
             
@@ -131,17 +151,20 @@ async def send_message(
             ]
         else:
             # No memory context - generate without context
-            response_text = await gemini.generate(
+            response_text = await llm.generate(
                 prompt=f"Please help with this question: {message.content}",
                 system_instruction="You are NeuroGraph, a helpful AI assistant. Answer concisely.",
+                provider=provider,
+                model=model,
             )
             confidence = 0.5
         
         reasoning_path.append({
             "step": 3,
             "action": "generate_response",
-            "result": "Generated response using Gemini",
-            "model": "gemini-2.5-flash",
+            "result": f"Generated response using {provider}/{model}",
+            "provider": provider,
+            "model": model,
         })
         
         return ChatResponse(
@@ -152,10 +175,12 @@ async def send_message(
             sources=sources,
             confidence=confidence,
             created_at=datetime.now(timezone.utc),
+            model_used=model,
+            provider_used=provider,
         )
         
     except Exception as e:
-        logger.error("chat_generation_failed", error=str(e))
+        logger.error("chat_generation_failed", error=str(e), provider=provider, model=model)
         # Return error response
         return ChatResponse(
             id=uuid4(),
@@ -165,6 +190,8 @@ async def send_message(
             sources=[],
             confidence=0.1,
             created_at=datetime.now(timezone.utc),
+            model_used=model,
+            provider_used=provider,
         )
 
 

@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BlurText } from '@/components/reactbits/BlurText';
 import ScrollFloat from '@/components/text/ScrollFloat';
-import ScrollStack, { ScrollStackItem } from '@/components/ScrollStack';
 import Silk from '@/components/landing/Silk';
 import GridMotion from '@/components/landing/GridMotion';
 import Plasma from '@/components/landing/Plasma';
@@ -137,35 +136,35 @@ export default function Landing() {
         </ScrollReveal>
       </section>
 
-      {/* 3. FEATURE CARDS (ScrollStack) */}
+      {/* 3. FEATURE CARDS (Simple Reveal Animation) */}
       <section id="orchestrator" className="py-32 bg-[#050110]">
         <ScrollReveal delay={0.2} className="text-center max-w-4xl mx-auto px-6 mb-20">
           <h2 className="text-5xl font-black text-white mb-6">Three-Layer Memory Architecture</h2>
           <p className="text-xl text-white/50">Personal, Organization, and Global knowledge with explainable reasoning.</p>
         </ScrollReveal>
 
-        <ScrollStack useWindowScroll={true} itemDistance={150} stackPosition="30%">
-          <ScrollStackItem>
-            <div className="bg-[#0b061d] p-12 md:p-20 rounded-[3rem] border border-purple-500/20 shadow-[0_0_50px_rgba(82,39,255,0.1)] flex flex-col justify-center max-w-5xl mx-auto h-[60vh]">
+        <div className="max-w-5xl mx-auto px-4 space-y-12">
+          <ScrollReveal delay={0.3}>
+            <div className="bg-[#0b061d] p-12 md:p-20 rounded-[3rem] border border-purple-500/20 shadow-[0_0_50px_rgba(82,39,255,0.1)] hover:shadow-[0_0_80px_rgba(82,39,255,0.2)] transition-all duration-500 hover:scale-[1.02]">
               <h2 className="text-4xl md:text-6xl font-black mb-6 text-transparent bg-clip-text bg-gradient-to-r from-purple-200 to-fuchsia-300">Personal Memory</h2>
               <p className="text-xl text-white/70 max-w-2xl leading-relaxed">Private user memory isolated per user. Store personal notes, preferences, and private context with full provenance tracking.</p>
             </div>
-          </ScrollStackItem>
+          </ScrollReveal>
 
-          <ScrollStackItem>
-            <div className="bg-gradient-to-br from-[#120830] to-[#0b061d] p-12 md:p-20 rounded-[3rem] border border-fuchsia-500/20 shadow-[0_0_50px_rgba(255,159,252,0.1)] flex flex-col justify-center max-w-5xl mx-auto h-[60vh]">
+          <ScrollReveal delay={0.4}>
+            <div className="bg-gradient-to-br from-[#120830] to-[#0b061d] p-12 md:p-20 rounded-[3rem] border border-fuchsia-500/20 shadow-[0_0_50px_rgba(255,159,252,0.1)] hover:shadow-[0_0_80px_rgba(255,159,252,0.2)] transition-all duration-500 hover:scale-[1.02]">
               <h2 className="text-4xl md:text-6xl font-black mb-6 text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-200 to-[#FF9FFC]">Organization Memory</h2>
               <p className="text-xl text-white/70 max-w-2xl leading-relaxed">Shared team knowledge scoped to your organization. Collaborate with confidence scoring and automatic conflict detection.</p>
             </div>
-          </ScrollStackItem>
+          </ScrollReveal>
 
-          <ScrollStackItem>
-            <div className="bg-gradient-to-br from-[#1d0b30] to-[#04010a] p-12 md:p-20 rounded-[3rem] border border-[#5227FF]/30 shadow-[0_0_50px_rgba(82,39,255,0.2)] flex flex-col justify-center max-w-5xl mx-auto h-[60vh]">
+          <ScrollReveal delay={0.5}>
+            <div className="bg-gradient-to-br from-[#1d0b30] to-[#04010a] p-12 md:p-20 rounded-[3rem] border border-[#5227FF]/30 shadow-[0_0_50px_rgba(82,39,255,0.2)] hover:shadow-[0_0_80px_rgba(82,39,255,0.3)] transition-all duration-500 hover:scale-[1.02]">
               <h2 className="text-4xl md:text-6xl font-black mb-6 text-transparent bg-clip-text bg-gradient-to-r from-white to-[#B19EEF]">Global Memory</h2>
               <p className="text-xl text-white/70 max-w-2xl leading-relaxed">Public world knowledge with write protection. Every relationship stored with reason, timestamp, and confidence score.</p>
             </div>
-          </ScrollStackItem>
-        </ScrollStack>
+          </ScrollReveal>
+        </div>
       </section>
 
       {/* 5. HYBRID INTELLIGENCE (Plasma) */}
@@ -192,7 +191,18 @@ export default function Landing() {
       {/* 6. GRAPH VISUALIZATION (GridMotion) */}
       <section className="relative w-full h-[80vh] bg-black overflow-hidden flex flex-col items-center justify-center">
         <ScrollReveal className="absolute inset-0 z-0 pointer-events-none">
-          <GridMotion gradientColor="#5227FF" items={[]} />
+          <GridMotion 
+            gradientColor="#5227FF" 
+            items={[
+              'Entity', 'Relationship', 'Node', 'Edge',
+              'Provenance', 'Timestamp', 'Confidence', 'Layer',
+              'Vector', 'Embedding', 'Similarity', 'Context',
+              'Reasoning', 'Memory', 'Knowledge', 'Graph',
+              'Query', 'Traverse', 'Connect', 'Discover',
+              'Personal', 'Organization', 'Global', 'Hybrid',
+              'Explain', 'Source', 'Score', 'Path'
+            ]} 
+          />
         </ScrollReveal>
         <ScrollReveal className="relative z-10 max-w-3xl text-center px-4 mix-blend-difference pointer-events-none">
           <h2 className="text-5xl md:text-7xl font-black text-white mb-6">Interactive Graph Visualization</h2>

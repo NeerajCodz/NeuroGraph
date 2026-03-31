@@ -122,7 +122,9 @@ export const chatApi = {
     content: string,
     conversationId?: string,
     layer: 'personal' | 'tenant' | 'global' = 'personal',
-    includeGlobal = false
+    includeGlobal = false,
+    provider?: string,
+    model?: string
   ) {
     return request('/chat/message', {
       method: 'POST',
@@ -131,6 +133,8 @@ export const chatApi = {
         conversation_id: conversationId,
         layer,
         include_global: includeGlobal,
+        provider,
+        model,
       }),
     });
   },
@@ -141,6 +145,29 @@ export const chatApi = {
   
   async getConversation(conversationId: string) {
     return request(`/chat/conversations/${conversationId}`);
+  },
+};
+
+// Models API
+export const modelsApi = {
+  async getProviders() {
+    return request('/models/providers');
+  },
+  
+  async getAllModels() {
+    return request('/models/all');
+  },
+  
+  async getProviderModels(providerId: string) {
+    return request(`/models/provider/${providerId}`);
+  },
+  
+  async getRecommendations() {
+    return request('/models/recommendations');
+  },
+  
+  async testModel(providerId: string, modelId: string) {
+    return request(`/models/test/${providerId}/${modelId}`, { method: 'POST' });
   },
 };
 

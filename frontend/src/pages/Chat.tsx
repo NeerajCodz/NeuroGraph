@@ -3,7 +3,6 @@ import { Bot, BrainCircuit, Activity, Settings2, Send, Loader2 } from 'lucide-re
 import { useState, useRef, useEffect } from 'react';
 import { chatApi } from '@/services/api';
 import type { ChatResponse, ReasoningStep, MemorySource } from '@/types/api';
-import { cn } from '@/lib/utils';
 
 interface Message {
   id: string;
@@ -26,6 +25,14 @@ export default function Chat() {
   const [error, setError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Get selected model from localStorage (set in Settings)
+  const getSelectedModel = () => {
+    return {
+      provider: localStorage.getItem('ng_default_provider') || 'nvidia',
+      model: localStorage.getItem('ng_default_model') || 'devstral-2-123b',
+    };
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,12 +59,16 @@ export default function Chat() {
     setCurrentReasoning(null);
     setCurrentSources(null);
 
+    const { provider, model } = getSelectedModel();
+
     try {
       const response = await chatApi.sendMessage(
         userMessage.content,
         conversationId || undefined,
         'personal',
-        true
+        true,
+        provider,
+        model
       ) as ChatResponse;
 
       if (response.conversation_id && !conversationId) {
@@ -101,9 +112,9 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-full min-h-0 w-full relative">
-      <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col mx-auto max-w-4xl pt-4">
-        <div className="flex justify-end px-4 md:px-0 mb-2">
+    <div className="absolute inset-0 flex flex-col w-full bg-linear-to-b from-[#050110] via-[#0a0520] to-[#050110]">
+      <section className="flex flex-col flex-1 min-h-0 min-w-0 mx-auto max-w-3xl w-full">
+        <div className="flex justify-end px-4 md:px-6 pt-4 mb-2 shrink-0">
           <button
             onClick={() => setIsOrchestratorOpen((prev) => !prev)}
             className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
@@ -114,62 +125,70 @@ export default function Chat() {
         </div>
 
         {/* Messages */}
-        <div className="scrollbar-thin flex-1 min-h-0 overflow-y-auto px-2 md:px-4">
+        <div className="scrollbar-thin flex-1 min-h-0 overflow-y-auto px-4 md:px-6">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <BrainCircuit className="w-16 h-16 text-purple-500/30 mb-4" />
-              <h2 className="text-xl font-semibold text-white/80 mb-2">Welcome to NeuroGraph</h2>
-              <p className="text-white/50 max-w-md">
-                Ask me anything. I'll use your knowledge graph and memory to provide context-aware answers.
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              <div className="mb-6 p-4 rounded-full bg-linear-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30">
+                <BrainCircuit className="w-12 h-12 text-purple-400" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-3">Welcome to NeuroGraph</h2>
+              <p className="text-white/60 max-w-md text-sm leading-relaxed">
+                Ask me anything. I'll use your knowledge graph and memory to provide context-aware answers with explainable reasoning.
               </p>
             </div>
           ) : (
-            <div className="space-y-4 pb-4">
+            <div className="space-y-6 pb-4 pt-2">
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={cn(
-                    'flex gap-3',
-                    message.role === 'user' ? 'justify-end' : 'justify-start'
-                  )}
+                  className="group"
                 >
                   {message.role === 'assistant' && (
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                      <Bot className="w-4 h-4 text-white" />
+                    <div className="flex gap-4 items-start">
+                      <div className="shrink-0 w-7 h-7 rounded-lg bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+                        <Bot className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[15px] leading-7 text-white/90">
+                          {message.content}
+                        </div>
+                        {message.confidence && (
+                          <div className="flex items-center gap-2 mt-2 text-xs text-white/40">
+                            <span>{formatTime(message.created_at)}</span>
+                            <span>•</span>
+                            <span className="text-purple-400">
+                              {(message.confidence * 100).toFixed(0)}% confidence
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-                  <div
-                    className={cn(
-                      'max-w-[80%] rounded-2xl px-4 py-3',
-                      message.role === 'user'
-                        ? 'bg-purple-500/20 text-white border border-purple-500/30'
-                        : 'bg-white/5 text-white/90 border border-white/10'
-                    )}
-                  >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-white/40">
-                      <span>{formatTime(message.created_at)}</span>
-                      {message.confidence && (
-                        <span className="text-purple-300">
-                          {(message.confidence * 100).toFixed(0)}% confident
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  
                   {message.role === 'user' && (
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
-                      <span className="text-white text-sm font-medium">U</span>
+                    <div className="flex gap-4 items-start">
+                      <div className="shrink-0 w-7 h-7 rounded-lg bg-linear-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg">
+                        <span className="text-white text-xs font-semibold">Y</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[15px] leading-7 text-white">
+                          {message.content}
+                        </div>
+                        <div className="text-xs text-white/40 mt-2">
+                          {formatTime(message.created_at)}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
               ))}
               {isLoading && (
-                <div className="flex gap-3 justify-start">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                <div className="flex gap-4 items-start">
+                  <div className="shrink-0 w-7 h-7 rounded-lg bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
                     <Bot className="w-4 h-4 text-white" />
                   </div>
-                  <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
-                    <div className="flex items-center gap-2 text-white/60">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-white/50 text-sm">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Thinking...</span>
                     </div>
@@ -183,36 +202,44 @@ export default function Chat() {
 
         {/* Error */}
         {error && (
-          <div className="mx-4 mb-2 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm">
+          <div className="mx-4 md:mx-6 mb-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm">
             {error}
           </div>
         )}
 
         {/* Input */}
-        <div className="mt-auto shrink-0 px-2 py-4 md:px-4 md:py-6">
-          <div className="relative">
+        <div className="shrink-0 px-4 md:px-6 pb-6 pt-4">
+          <div className="relative max-w-full">
             <textarea
               ref={inputRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+              }}
               onKeyDown={handleKeyDown}
-              placeholder="Ask something..."
+              placeholder="Message NeuroGraph..."
               rows={1}
-              className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 px-4 py-3 pr-12 text-white placeholder:text-white/40 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 disabled:opacity-50"
+              className="w-full resize-none rounded-3xl border border-white/10 bg-white/5 px-5 py-4 pr-14 text-[15px] text-white placeholder:text-white/40 focus:border-white/20 focus:outline-none focus:bg-white/[0.07] disabled:opacity-50 transition-all max-h-50 shadow-lg shadow-black/20"
               disabled={isLoading}
+              style={{ minHeight: '52px' }}
             />
             <button
               onClick={handleSend}
               disabled={isLoading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="absolute right-3 bottom-3 p-2.5 rounded-xl bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             >
               {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <Send className="w-4 h-4" />
+                <Send className="w-5 h-5" />
               )}
             </button>
           </div>
+          <p className="text-center text-xs text-white/30 mt-3">
+            NeuroGraph can make mistakes. Verify important information.
+          </p>
         </div>
       </section>
 
