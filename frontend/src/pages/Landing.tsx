@@ -6,6 +6,7 @@ import ScrollStack, { ScrollStackItem } from '@/components/ScrollStack';
 import Silk from '@/components/landing/Silk';
 import GridMotion from '@/components/landing/GridMotion';
 import Plasma from '@/components/landing/Plasma';
+import Hyperspeed from '@/components/landing/Hyperspeed';
 import { ArrowRight, Network, Sparkles, DatabaseZap } from 'lucide-react';
 
 // Reusable scroll reveal wrapper
@@ -26,13 +27,38 @@ export default function Landing() {
     <div className="bg-[#050110] text-white min-h-screen font-sans selection:bg-purple-600/50 selection:text-white overflow-x-hidden">
 
       {/* 1. HERO SECTION */}
-      <section className="relative h-screen w-full flex flex-col items-center justify-center bg-gradient-to-b from-[#010006] via-[#050110] to-[#050110]">
-        {/* Animated gradient background */}
-        <div className="absolute inset-0 z-0 overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(82,39,255,0.15)_0%,_transparent_70%)] animate-pulse" style={{ animationDuration: '4s' }}></div>
-          <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '6s' }}></div>
-          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-fuchsia-500/20 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '8s', animationDelay: '1s' }}></div>
+      <section className="relative h-screen w-full flex flex-col items-center justify-center overflow-hidden">
+        {/* Hyperspeed background */}
+        <div className="absolute inset-0 z-0">
+          <Hyperspeed
+            effectOptions={{
+              distortion: 'turbulentDistortion',
+              length: 400,
+              roadWidth: 10,
+              lanesPerRoad: 4,
+              fov: 90,
+              fovSpeedUp: 150,
+              speedUp: 2,
+              carLightsFade: 0.4,
+              totalSideLightSticks: 20,
+              lightPairsPerRoadWay: 40,
+              colors: {
+                roadColor: 0x080808,
+                islandColor: 0x0a0a0a,
+                background: 0x000000,
+                shoulderLines: 0x131318,
+                brokenLines: 0x131318,
+                leftCars: [0x9333ea, 0x7c3aed, 0xa855f7],
+                rightCars: [0x06b6d4, 0x0891b2, 0x22d3ee],
+                sticks: 0x7c3aed
+              }
+            }}
+          />
         </div>
+        
+        {/* Gradient overlay for readability */}
+        <div className="absolute inset-0 z-[1] bg-gradient-to-b from-[#050110]/60 via-transparent to-[#050110]" />
+        <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_at_center,_transparent_0%,_rgba(5,1,16,0.7)_70%)]" />
 
         <header className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-6 md:px-12 pointer-events-auto">
           <div className="flex items-center gap-3">
