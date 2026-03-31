@@ -53,33 +53,38 @@ export default function Signup() {
     }
   };
 
+  // Memoize the background to prevent it from re-rendering on every keystroke
+  const background = React.useMemo(() => (
+    <div className="absolute inset-0 z-0 opacity-80 pointer-events-none">
+      <LiquidEther
+        colors={['#5227FF', '#FF9FFC', '#B19EEF']}
+        mouseForce={20}
+        cursorSize={100}
+        isViscous
+        viscous={30}
+        iterationsViscous={32}
+        iterationsPoisson={32}
+        resolution={0.5}
+        isBounce={false}
+        autoDemo
+        autoSpeed={0.5}
+        autoIntensity={2.2}
+        takeoverDuration={0.25}
+        autoResumeDelay={3000}
+        autoRampDuration={0.6}
+        color0="#5227FF"
+        color1="#FF9FFC"
+        color2="#B19EEF"
+      />
+      <div className="absolute inset-0 bg-[#050110]/20 mix-blend-multiply" />
+    </div>
+  ), []);
+
   return (
     <div className="relative flex h-screen w-full bg-[#050110] items-center justify-center overflow-hidden text-white font-sans">
 
       {/* 1. Full Screen Liquid Ether Background */}
-      <div className="absolute inset-0 z-0 opacity-80 pointer-events-none">
-        <LiquidEther
-          colors={['#5227FF', '#FF9FFC', '#B19EEF']}
-          mouseForce={20}
-          cursorSize={100}
-          isViscous
-          viscous={30}
-          iterationsViscous={32}
-          iterationsPoisson={32}
-          resolution={0.5}
-          isBounce={false}
-          autoDemo
-          autoSpeed={0.5}
-          autoIntensity={2.2}
-          takeoverDuration={0.25}
-          autoResumeDelay={3000}
-          autoRampDuration={0.6}
-          color0="#5227FF"
-          color1="#FF9FFC"
-          color2="#B19EEF"
-        />
-        <div className="absolute inset-0 bg-[#050110]/20 mix-blend-multiply" />
-      </div>
+      {background}
 
       {/* Back Button */}
       <Link
