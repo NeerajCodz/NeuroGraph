@@ -10,6 +10,7 @@ import Signup from '@/pages/Signup';
 import Settings from '@/pages/Settings';
 import Admin from '@/pages/Admin';
 import Memory from '@/pages/Memory';
+import Profile from '@/pages/Profile';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
@@ -39,13 +40,32 @@ function Layout() {
   const location = useLocation();
   useAuth(); // Ensure user is authenticated
   const isChatRoute = location.pathname.startsWith('/chat') || location.pathname === '/';
+  const isProfileRoute = location.pathname.startsWith('/profile');
   const pageTitle = useMemo(() => {
     if (location.pathname.startsWith('/graph')) return 'Knowledge Graph';
     if (location.pathname.startsWith('/memory')) return 'Memory Store';
     if (location.pathname.startsWith('/settings')) return 'System Settings';
     if (location.pathname.startsWith('/admin')) return 'Admin Center';
+    if (location.pathname.startsWith('/profile')) return 'Profile & Settings';
     return 'Intelligence Chat';
   }, [location.pathname]);
+
+  // Profile page has its own layout
+  if (isProfileRoute) {
+    return (
+      <SidebarProvider defaultOpen>
+        <div className="app-shell flex h-dvh min-h-dvh w-full text-white selection:bg-primary selection:text-primary-foreground">
+          <AppSidebar />
+          <main className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden border-l border-white/10 bg-[#090512]">
+            <Routes>
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/profile/*" element={<Profile />} />
+            </Routes>
+          </main>
+        </div>
+      </SidebarProvider>
+    );
+  }
 
   return (
     <SidebarProvider defaultOpen>

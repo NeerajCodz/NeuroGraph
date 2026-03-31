@@ -2,14 +2,17 @@ import {
   MessageSquare,
   History,
   Network,
-  Settings,
-  Shield,
   LogOut,
   Bell,
-  Rocket,
-  Brain
+  Brain,
+  User,
+  Plus,
+  FolderOpen,
+  ChevronRight,
+  Loader2
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import {
   Sidebar,
   SidebarContent,
@@ -24,7 +27,7 @@ import {
   SidebarRail,
   useSidebar
 } from '@/components/ui/sidebar';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';   
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,24 +36,36 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@/components/ui/collapsible';
 import { ShinyText } from '@/components/reactbits/ShinyText';
 import { useAuth } from '@/contexts/AuthContext';
+import { workspaceApi, conversationsApi } from '@/services/api';
 
-const items = [
-  { title: 'Intelligence Chat', subtitle: 'live reasoning', url: '/chat', icon: MessageSquare },
+interface Workspace {
+  id: string;
+  name: string;
+  is_owner?: boolean;
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  message_count: number;
+  created_at: string;
+  workspace_id?: string;
+}
+
+const memoryItems = [
   { title: 'Memory Store', subtitle: 'knowledge base', url: '/memory', icon: Brain },
-];
-
-const chatHistoryItems = [
-  { id: 'risk-audit', title: 'Q4 Deployment Risk', subtitle: '2m ago' },
-  { id: 'beta-cluster', title: 'Cluster Beta Deep Dive', subtitle: '18m ago' },
-  { id: 'iam-policies', title: 'IAM Policy Conflicts', subtitle: '1h ago' },
-];
-
-const footerItems = [
   { title: 'Knowledge Graph', subtitle: 'entity mapping', url: '/graph', icon: Network },
-  { title: 'System Settings', subtitle: 'preferences', url: '/settings', icon: Settings },
-  { title: 'Administration', subtitle: 'monitoring', url: '/admin', icon: Shield },
+];
+
+const profileItems = [
+  { title: 'Profile', subtitle: 'account settings', url: '/profile', icon: User },
 ];
 
 export function AppSidebar() {
@@ -61,14 +76,78 @@ export function AppSidebar() {
   const { isMobile = false, state = 'expanded' } = useSidebar() || {};
   const collapsed = state === 'collapsed';
 
+  // State for workspaces and conversations
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [expandedWorkspace, setExpandedWorkspace] = useState<string | null>(null);
+  const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+
+  // Load workspaces on mount
+  useEffect(() => {
+    const loadWorkspaces = async () => {
+      try {
+        setIsLoadingWorkspaces(true);
+        const result = await workspaceApi.list() as Workspace[];
+        setWorkspaces(Array.isArray(result) ? result : []);
+      } catch (err) {
+        console.error('Failed to load workspaces:', err);
+        setWorkspaces([]);
+      } finally {
+        setIsLoadingWorkspaces(false);
+      }
+    };
+    loadWorkspaces();
+  }, []);
+
+  // Load conversations (personal)
+  useEffect(() => {
+    const loadConversations = async () => {
+      try {
+        setIsLoadingConversations(true);
+        const result = await conversationsApi.list() as Conversation[];
+        setConversations(Array.isArray(result) ? result : []);
+      } catch (err) {
+        console.error('Failed to load conversations:', err);
+        setConversations([]);
+      } finally {
+        setIsLoadingConversations(false);
+      }
+    };
+    loadConversations();
+  }, []);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const formatTimeAgo = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (minutes < 1) return 'now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
+  };
+
+  const handleNewChat = () => {
+    navigate('/chat');
+    // Force a reload by using state
+    window.dispatchEvent(new CustomEvent('new-chat'));
   };
   
   const userInitials = user?.full_name
     ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : user?.email?.slice(0, 2).toUpperCase() || 'U';
+
+  // Get recent personal conversations (not in workspaces)
+  const personalConversations = conversations.filter(c => !c.workspace_id).slice(0, 10);
 
   return (
     <Sidebar collapsible="icon" className="font-sans">
@@ -86,12 +165,133 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="flex flex-col gap-7 px-3 py-6">
+      <SidebarContent className="flex flex-col gap-5 px-3 py-5">
+        {/* New Chat Button */}
         <SidebarGroup className="p-0">
-          <SidebarGroupLabel className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/45">Workspace</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="New Chat"
+                  onClick={handleNewChat}
+                  className="group/menu h-11 rounded-2xl px-2 transition-all duration-300 gradient-primary text-primary-foreground shadow-[0_16px_30px_-16px_rgba(172,106,255,0.95)]"
+                >
+                  <span className="flex w-full items-center gap-3">
+                    <span className="grid h-7 w-7 shrink-0 place-content-center rounded-xl bg-black/20">
+                      <Plus className="h-4 w-4" />
+                    </span>
+                    <span className="text-[13px] font-medium group-data-[collapsible=icon]:hidden">New Chat</span>
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Workspaces */}
+        <SidebarGroup className="p-0">
+          <SidebarGroupLabel className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/45">Workspaces</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu className="gap-1">
+              {isLoadingWorkspaces ? (
+                <div className="flex items-center justify-center py-3 text-white/30">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                </div>
+              ) : workspaces.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-white/30">No workspaces yet</div>
+              ) : (
+                workspaces.map((workspace) => (
+                  <Collapsible
+                    key={workspace.id}
+                    open={expandedWorkspace === workspace.id}
+                    onOpenChange={(open) => setExpandedWorkspace(open ? workspace.id : null)}
+                  >
+                    <SidebarMenuItem>
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton
+                          tooltip={workspace.name}
+                          className="group/menu h-10 rounded-xl px-2 transition-all duration-300 text-white/70 hover:bg-white/7 hover:text-white"
+                        >
+                          <span className="flex w-full items-center gap-3">
+                            <span className="grid h-7 w-7 shrink-0 place-content-center rounded-lg bg-white/5 group-hover/menu:bg-white/10">
+                              <FolderOpen className="h-4 w-4" />
+                            </span>
+                            <span className="flex-1 truncate text-[12.5px] font-medium group-data-[collapsible=icon]:hidden">{workspace.name}</span>
+                            <ChevronRight className={`h-3 w-3 text-white/30 transition-transform group-data-[collapsible=icon]:hidden ${expandedWorkspace === workspace.id ? 'rotate-90' : ''}`} />
+                          </span>
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="ml-6 border-l border-white/10 pl-3 mt-1 space-y-1">
+                          <button
+                            onClick={() => navigate(`/chat?workspace=${workspace.id}`)}
+                            className="w-full text-left px-2 py-1.5 text-[11px] text-white/50 hover:text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+                          >
+                            + New in workspace
+                          </button>
+                        </div>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                ))
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Recent Chats */}
+        <SidebarGroup className="p-0">
+          <SidebarGroupLabel className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/45">Recent Chats</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu className="gap-1">
+              {isLoadingConversations ? (
+                <div className="flex items-center justify-center py-3 text-white/30">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                </div>
+              ) : personalConversations.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-white/30">No conversations yet</div>
+              ) : (
+                personalConversations.map((conv) => {
+                  const isActive = location.pathname === '/chat' && location.search.includes(conv.id);
+                  return (
+                    <SidebarMenuItem key={conv.id}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        tooltip={conv.title}
+                        onClick={() => navigate(`/chat?conversation=${conv.id}`)}
+                        className={
+                          'group/menu h-10 rounded-xl px-2 transition-all duration-300 ' +
+                          (isActive
+                            ? 'gradient-secondary text-white'
+                            : 'text-white/65 hover:bg-white/7 hover:text-white')
+                        }
+                      >
+                        <span className="flex w-full items-center gap-3">
+                          <span className={"grid h-7 w-7 shrink-0 place-content-center rounded-lg transition " + (isActive ? 'bg-black/20' : 'bg-white/5 group-hover/menu:bg-white/10')}>
+                            <History className="h-4 w-4" />
+                          </span>
+                          <span className="flex min-w-0 flex-col text-left group-data-[collapsible=icon]:hidden">
+                            <span className="truncate text-[12px] font-medium">{conv.title || 'Untitled'}</span>
+                            <span className={"truncate text-[10px] " + (isActive ? 'text-white/80' : 'text-white/35')}>
+                              {formatTimeAgo(conv.created_at)}
+                            </span>
+                          </span>
+                        </span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Memory Section */}
+        <SidebarGroup className="p-0">
+          <SidebarGroupLabel className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/45">Memory</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="gap-1.5">
-              {items.map((item) => {
+              {memoryItems.map((item) => {
                 const isActive = location.pathname === item.url;
                 return (
                 <SidebarMenuItem key={item.title}>
@@ -100,9 +300,9 @@ export function AppSidebar() {
                     tooltip={item.title}
                     onClick={() => navigate(item.url)}
                     className={
-                      "group/menu h-12 rounded-2xl px-2 transition-all duration-300 " +
+                      "group/menu h-11 rounded-2xl px-2 transition-all duration-300 " +
                       (isActive
-                        ? "gradient-primary text-primary-foreground shadow-[0_16px_30px_-16px_rgba(172,106,255,0.95)]"
+                        ? "gradient-secondary text-white"
                         : "text-white/70 hover:bg-white/7 hover:text-white")
                     }
                   >
@@ -111,7 +311,7 @@ export function AppSidebar() {
                         <item.icon className={"h-[17px] w-[17px] transition-transform duration-300 " + (isActive ? "scale-105" : "group-hover/menu:scale-110")} />
                       </span>
                       <span className="flex min-w-0 flex-col text-left group-data-[collapsible=icon]:hidden">
-                        <span className="truncate text-[13.5px] font-medium">{item.title}</span>
+                        <span className="truncate text-[13px] font-medium">{item.title}</span>
                         <span className={"truncate text-[10px] uppercase tracking-[0.15em] " + (isActive ? "text-white/80" : "text-white/35")}>{item.subtitle}</span>
                       </span>
                     </span>
@@ -122,49 +322,12 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="p-0">
-          <SidebarGroupLabel className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/45">Chat History</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-1.5">
-              {chatHistoryItems.map((item) => {
-                const isActive = location.pathname === '/chat' && location.search.includes(item.id);
-
-                return (
-                  <SidebarMenuItem key={item.id}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      tooltip={item.title}
-                      onClick={() => navigate(`/chat?thread=${item.id}`)}
-                      className={
-                        'group/menu h-10 rounded-xl px-2 transition-all duration-300 ' +
-                        (isActive
-                          ? 'gradient-secondary text-white'
-                          : 'text-white/65 hover:bg-white/7 hover:text-white')
-                      }
-                    >
-                      <span className="flex w-full items-center gap-3">
-                        <span className={"grid h-7 w-7 shrink-0 place-content-center rounded-lg transition " + (isActive ? 'bg-black/20' : 'bg-white/5 group-hover/menu:bg-white/10')}>
-                          <History className={"h-4 w-4 transition-transform duration-300 " + (isActive ? 'scale-105' : 'group-hover/menu:scale-110')} />
-                        </span>
-                        <span className="flex min-w-0 flex-col text-left group-data-[collapsible=icon]:hidden">
-                          <span className="truncate text-[12.5px] font-medium">{item.title}</span>
-                          <span className={"truncate text-[10px] uppercase tracking-[0.15em] " + (isActive ? 'text-white/80' : 'text-white/35')}>{item.subtitle}</span>
-                        </span>
-                      </span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
+        {/* Profile Section */}
         <SidebarGroup className="mt-auto p-0">
-          <SidebarGroupLabel className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/45">Operations</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="gap-1.5">
-              {footerItems.map((item) => {
-                const isActive = location.pathname === item.url;
+              {profileItems.map((item) => {
+                const isActive = location.pathname === item.url || location.pathname.startsWith('/profile');
                 return (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
@@ -172,7 +335,7 @@ export function AppSidebar() {
                     tooltip={item.title}
                     onClick={() => navigate(item.url)}
                     className={
-                      "group/menu h-12 rounded-2xl px-2 transition-all duration-300 " +
+                      "group/menu h-11 rounded-2xl px-2 transition-all duration-300 " +
                       (isActive
                         ? "gradient-secondary text-white"
                         : "text-white/70 hover:bg-white/7 hover:text-white")
@@ -183,7 +346,7 @@ export function AppSidebar() {
                         <item.icon className={"h-[17px] w-[17px] transition-transform duration-300 " + (isActive ? "" : "group-hover/menu:-rotate-6")} />
                       </span>
                       <span className="flex min-w-0 flex-col text-left group-data-[collapsible=icon]:hidden">
-                        <span className="truncate text-[13.5px] font-medium">{item.title}</span>
+                        <span className="truncate text-[13px] font-medium">{item.title}</span>
                         <span className={"truncate text-[10px] uppercase tracking-[0.15em] " + (isActive ? "text-white/80" : "text-white/35")}>{item.subtitle}</span>
                       </span>
                     </span>
@@ -228,16 +391,19 @@ export function AppSidebar() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator className="my-2 bg-white/5" />
+                <DropdownMenuItem 
+                  className="cursor-pointer rounded-xl py-3 transition-all hover:bg-white/10 focus:bg-white/10 focus:text-white"
+                  onClick={() => navigate('/profile')}
+                >
+                  <User className="mr-3 h-4 w-4" />
+                  <span className="font-medium">Profile & Settings</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem className="cursor-pointer rounded-xl py-3 transition-all hover:bg-white/10 focus:bg-white/10 focus:text-white">
                   <Bell className="mr-3 h-4 w-4" />
                   <span className="font-medium">Notifications</span>
                   <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-purple-400/20 text-[10px] font-bold text-purple-100 ring-1 ring-purple-200/40">
-                    4
+                    0
                   </span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer rounded-xl py-3 transition-all hover:bg-white/10 focus:bg-white/10 focus:text-white">
-                  <Rocket className="mr-3 h-4 w-4" />
-                  <span className="font-medium">Launch Diagnostics</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="my-2 bg-white/5" />
                 <DropdownMenuItem className="cursor-pointer rounded-xl py-3 text-red-300 transition-all hover:bg-red-500/12 focus:bg-red-500/12 focus:text-red-200" onClick={handleLogout}>

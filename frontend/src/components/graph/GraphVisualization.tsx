@@ -10,7 +10,7 @@ type GraphNode = d3.SimulationNodeDatum & {
   label: string;
   type: string;
   layer: string;
-  confidence?: number;
+  confidence: number;
 };
 
 type GraphLink = d3.SimulationLinkDatum<GraphNode> & {
@@ -27,12 +27,14 @@ const typeColors: Record<string, string> = {
   Project: '#dd8cff',
   Technology: '#7bffa3',
   Concept: '#ff8d9d',
+  Memory: '#ffb87b',
   default: '#b084ff',
 };
 
 const layerColors: Record<string, string> = {
   personal: '#b084ff',
   tenant: '#7fb5ff',
+  workspace: '#7fb5ff',
   global: '#7bffa3',
 };
 
@@ -56,6 +58,7 @@ export default function GraphVisualization() {
         label: n.name,
         type: n.type,
         layer: n.layer,
+        confidence: n.confidence ?? 0.5,
       }));
 
       const links: GraphLink[] = (data.edges || []).map((e: ApiEdge) => ({
@@ -115,12 +118,29 @@ export default function GraphVisualization() {
       zoomBehaviorRef.current = zoomBehavior;
       svg.call(zoomBehavior as d3.ZoomBehavior<SVGSVGElement, unknown>);
 
+      // Calculate node radius based on confidence (min 8, max 25)
+      const getNodeRadius = (d: GraphNode) => {
+        const confidence = d.confidence ?? 0.5;
+        return 8 + confidence * 17; // 8 to 25 range
+      };
+
+      // Calculate link stroke width based on weight (min 1, max 5)
+      const getLinkWidth = (d: GraphLink) => {
+        return 1 + d.weight * 4; // 1 to 5 range
+      };
+
+      // Calculate link opacity based on weight
+      const getLinkOpacity = (d: GraphLink) => {
+        return 0.3 + d.weight * 0.5; // 0.3 to 0.8 range
+      };
+
       const link = linkLayer
         .selectAll('line')
         .data(links)
         .join('line')
         .attr('stroke', 'rgba(210, 176, 255, 0.62)')
-        .attr('stroke-width', (d) => 1.3 + d.weight * 2)
+        .attr('stroke-width', getLinkWidth)
+        .attr('stroke-opacity', getLinkOpacity)
         .attr('stroke-linecap', 'round')
         .attr('cursor', 'pointer')
         .on('click', (_, d) => {
@@ -156,28 +176,43 @@ export default function GraphVisualization() {
           setSelectedEdge(null);
         });
 
+      // Outer glow circle - size based on confidence
       node
         .append('circle')
-        .attr('r', 20)
+        .attr('r', (d) => getNodeRadius(d) * 2)
         .attr('fill', (d) => getNodeColor(d))
-        .attr('fill-opacity', 0.25)
+        .attr('fill-opacity', (d) => 0.1 + (d.confidence ?? 0.5) * 0.15)
         .attr('stroke', (d) => getNodeColor(d))
         .attr('stroke-width', 1.2)
+        .attr('stroke-opacity', 0.3)
         .attr('filter', 'url(#node-glow)');
 
+      // Inner circle - size based on confidence
       node
         .append('circle')
-        .attr('r', 10)
-        .attr('fill', (d) => getNodeColor(d));
+        .attr('r', getNodeRadius)
+        .attr('fill', (d) => getNodeColor(d))
+        .attr('fill-opacity', (d) => 0.6 + (d.confidence ?? 0.5) * 0.4);
 
+      // Node label
       node
         .append('text')
-        .attr('dy', 34)
+        .attr('dy', (d) => getNodeRadius(d) * 2 + 14)
         .attr('fill', 'rgba(249, 239, 255, 0.9)')
         .attr('font-size', 10)
         .attr('font-weight', 600)
         .attr('text-anchor', 'middle')
         .text((d) => d.label.length > 15 ? d.label.slice(0, 15) + '...' : d.label);
+
+      // Confidence indicator on node
+      node
+        .append('text')
+        .attr('dy', 4)
+        .attr('fill', 'rgba(255, 255, 255, 0.9)')
+        .attr('font-size', 8)
+        .attr('font-weight', 700)
+        .attr('text-anchor', 'middle')
+        .text((d) => `${Math.round((d.confidence ?? 0.5) * 100)}%`);
 
       const simulation = d3
         .forceSimulation(nodes)
@@ -186,12 +221,12 @@ export default function GraphVisualization() {
           d3
             .forceLink<GraphNode, GraphLink>(links)
             .id((d) => d.id)
-            .distance((d) => 100 + (1 - d.weight) * 80)
-            .strength(0.6)
+            .distance((d) => 120 + (1 - d.weight) * 60)
+            .strength((d) => 0.3 + d.weight * 0.4)
         )
-        .force('charge', d3.forceManyBody().strength(-300))
+        .force('charge', d3.forceManyBody().strength(-400))
         .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collide', d3.forceCollide<GraphNode>().radius(40));
+        .force('collide', d3.forceCollide<GraphNode>().radius((d) => getNodeRadius(d) * 2 + 20));
 
       const drag = d3
         .drag<SVGGElement, GraphNode>()
@@ -320,6 +355,21 @@ export default function GraphVisualization() {
         </div>
       </div>
 
+      {/* Legend for node sizes */}
+      <div className="absolute left-4 bottom-16 rounded-2xl border border-white/15 bg-black/35 px-3 py-2 backdrop-blur-md text-xs text-white/60">
+        <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-2">Node Size = Confidence</p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-purple-400" />
+            <span>Low</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-4 rounded-full bg-purple-400" />
+            <span>High</span>
+          </div>
+        </div>
+      </div>
+
       <Button
         variant="ghost"
         size="icon"
@@ -341,6 +391,12 @@ export default function GraphVisualization() {
             <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
               <span>Layer</span>
               <strong style={{ color: layerColors[selectedNode.layer] || '#fff' }}>{selectedNode.layer}</strong>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
+              <span>Confidence</span>
+              <strong className={`${(selectedNode.confidence ?? 0.5) >= 0.7 ? 'text-green-400' : (selectedNode.confidence ?? 0.5) >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
+                {((selectedNode.confidence ?? 0.5) * 100).toFixed(0)}%
+              </strong>
             </div>
             <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
               <span>ID</span>
@@ -370,7 +426,7 @@ export default function GraphVisualization() {
               <strong className="text-purple-200">{typeof selectedEdge.target === 'object' ? selectedEdge.target.label : selectedEdge.target}</strong>
             </div>
             <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
-              <span>Confidence</span>
+              <span>Weight/Confidence</span>
               <strong className={`${selectedEdge.weight >= 0.7 ? 'text-green-400' : selectedEdge.weight >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
                 {(selectedEdge.weight * 100).toFixed(0)}%
               </strong>

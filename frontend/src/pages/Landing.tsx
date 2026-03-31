@@ -119,7 +119,7 @@ export default function Landing() {
       </section>
 
       {/* 2. RICH TYPOGRAPHY (ScrollFloat) */}
-      <section id="features" className="py-40 px-4 flex flex-col items-center justify-center text-center bg-[#050110]">
+      <section id="features" className="min-h-screen px-4 flex flex-col items-center justify-center text-center bg-[#050110]">
         <ScrollReveal className="max-w-5xl">
           <p className="mb-4 text-sm font-semibold uppercase tracking-[0.3em] text-purple-400">Graph-Based Memory</p>
           <div className="text-4xl md:text-7xl font-bold tracking-tight text-white leading-tight">
@@ -137,7 +137,7 @@ export default function Landing() {
       </section>
 
       {/* 3. FEATURE CARDS (Simple Reveal Animation) */}
-      <section id="orchestrator" className="py-32 bg-[#050110]">
+      <section id="orchestrator" className="min-h-screen py-20 bg-[#050110] flex flex-col items-center justify-center">
         <ScrollReveal delay={0.2} className="text-center max-w-4xl mx-auto px-6 mb-20">
           <h2 className="text-5xl font-black text-white mb-6">Three-Layer Memory Architecture</h2>
           <p className="text-xl text-white/50">Personal, Organization, and Global knowledge with explainable reasoning.</p>
@@ -168,7 +168,7 @@ export default function Landing() {
       </section>
 
       {/* 5. HYBRID INTELLIGENCE (Plasma) */}
-      <section className="relative w-full py-40 bg-[#050110] flex flex-col items-center justify-center overflow-hidden">
+      <section className="relative w-full min-h-screen bg-[#050110] flex flex-col items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <Plasma
             color="#5227FF"
@@ -189,7 +189,7 @@ export default function Landing() {
       </section>
 
       {/* 6. GRAPH VISUALIZATION (GridMotion) */}
-      <section className="relative w-full h-[80vh] bg-black overflow-hidden flex flex-col items-center justify-center">
+      <section className="relative w-full min-h-screen bg-black overflow-hidden flex flex-col items-center justify-center">
         <ScrollReveal className="absolute inset-0 z-0 pointer-events-none">
           <GridMotion 
             gradientColor="#5227FF" 
@@ -213,7 +213,7 @@ export default function Landing() {
       </section>
 
       {/* 7. CALL TO ACTION & FOOTER (Silk + GradualBlur) */}
-      <section className="relative h-[80vh] min-h-[700px] overflow-hidden bg-black">
+      <section className="relative min-h-screen overflow-hidden bg-black">
         <div className="absolute inset-0 z-0 pointer-events-none">
           <Silk
             speed={4}

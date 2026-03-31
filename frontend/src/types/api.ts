@@ -96,6 +96,7 @@ export interface GraphNode {
   name: string;
   type: string;
   layer: string;
+  confidence?: number;
 }
 
 export interface GraphEdge {
