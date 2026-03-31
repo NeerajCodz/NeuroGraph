@@ -2,9 +2,11 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AppSidebar } from '@/components/sidebar/AppSidebar';
+import Landing from '@/pages/Landing';
 import Chat from '@/pages/Chat';
 import Graph from '@/pages/Graph';
 import Login from '@/pages/Login';
+import Signup from '@/pages/Signup';
 import Settings from '@/pages/Settings';
 import Admin from '@/pages/Admin';
 import { Sparkles } from 'lucide-react';
@@ -65,7 +67,9 @@ function App() {
     <Router>
       <TooltipProvider>
         <Routes>
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
           <Route path="/*" element={<Layout />} />
         </Routes>
       </TooltipProvider>

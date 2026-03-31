@@ -88,10 +88,17 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   html,
-  body,
-  #root {
+  body {
     height: 100%;
+  }
+
+  #root {
+    min-height: 100%;
   }
 
   body {
@@ -101,7 +108,41 @@
       radial-gradient(circle at 20% 12%, rgba(135, 82, 255, 0.34) 0, transparent 36%),
       radial-gradient(circle at 82% 78%, rgba(192, 76, 255, 0.2) 0, transparent 42%),
       linear-gradient(168deg, #05030f 0%, #120724 46%, #06020f 100%);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  /* Enhanced Custom Scrollbar - Purple Theme */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: linear-gradient(to bottom, #050110, #0a041f);
+    border-left: 1px solid rgba(82, 39, 255, 0.1);
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(82, 39, 255, 0.6) 0%, rgba(255, 159, 252, 0.5) 100%);
+    border-radius: 10px;
+    border: 2px solid #050110;
+    box-shadow: 0 0 10px rgba(82, 39, 255, 0.3);
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(82, 39, 255, 0.9) 0%, rgba(255, 159, 252, 0.8) 100%);
+    box-shadow: 0 0 20px rgba(82, 39, 255, 0.6);
+  }
+  
+  ::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(180deg, #5227FF 0%, #FF9FFC 100%);
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(82, 39, 255, 0.6) #050110;
   }
 }
 

@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from src.api.dependencies.auth import get_current_user_id
@@ -99,6 +99,7 @@ async def get_entity(
 
 @router.get("/entities", response_model=list[EntityResponse])
 async def search_entities(
+    request: Request,
     user_id: Annotated[UUID, Depends(get_current_user_id)],
     q: str = Query(default="", max_length=255),
     types: list[str] | None = Query(default=None),
@@ -106,8 +107,53 @@ async def search_entities(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[EntityResponse]:
     """Search entities in the graph."""
-    # TODO: Implement search in Neo4j
-    return []
+    neo4j = request.app.state.neo4j
+    
+    # Build query based on filters
+    where_clauses = []
+    params = {"limit": limit}
+    
+    if q:
+        where_clauses.append("e.name CONTAINS $query")
+        params["query"] = q
+    
+    if types:
+        where_clauses.append("e.type IN $types")
+        params["types"] = types
+    
+    if layer:
+        where_clauses.append("e.layer = $layer")
+        params["layer"] = layer
+    
+    where_clause = " AND ".join(where_clauses) if where_clauses else "true"
+    
+    query = f"""
+    MATCH (e:Entity)
+    WHERE {where_clause}
+    RETURN e.id as id, e.name as name, e.type as type, 
+           coalesce(e.layer, 'global') as layer,
+           e.description as description
+    LIMIT $limit
+    """
+    
+    records = await neo4j.execute_read(query, params)
+    
+    entities = []
+    for record in records:
+        props = {}
+        if record.get("description"):
+            props["description"] = record["description"]
+        
+        entities.append(EntityResponse(
+            id=record["id"] or record["name"],
+            name=record["name"],
+            type=record["type"],
+            layer=record["layer"],
+            properties=props,
+        ))
+    
+    logger.info("entities_search", count=len(entities), query=q)
+    return entities
 
 
 @router.delete("/entities/{entity_id}")
@@ -151,14 +197,57 @@ async def create_relationship(
 
 @router.get("/relationships/{entity_id}", response_model=list[RelationshipResponse])
 async def get_relationships(
+    request: Request,
     entity_id: str,
     user_id: Annotated[UUID, Depends(get_current_user_id)],
     direction: str = Query(default="both", pattern="^(incoming|outgoing|both)$"),
     types: list[str] | None = Query(default=None),
 ) -> list[RelationshipResponse]:
     """Get relationships for an entity."""
-    # TODO: Fetch from Neo4j
-    return []
+    neo4j = request.app.state.neo4j
+    
+    # Build direction clause
+    if direction == "outgoing":
+        pattern = "(e)-[r]->(other)"
+    elif direction == "incoming":
+        pattern = "(e)<-[r]-(other)"
+    else:
+        pattern = "(e)-[r]-(other)"
+    
+    # Build type filter
+    type_filter = ""
+    params = {"entity_id": entity_id}
+    if types:
+        type_filter = "AND type(r) IN $types"
+        params["types"] = types
+    
+    query = f"""
+    MATCH {pattern}
+    WHERE (e.id = $entity_id OR e.name = $entity_id) {type_filter}
+    RETURN 
+        coalesce(r.id, id(r)) as id,
+        coalesce(startNode(r).id, startNode(r).name) as source_id,
+        coalesce(endNode(r).id, endNode(r).name) as target_id,
+        type(r) as type,
+        r.reason as reason,
+        coalesce(r.confidence, 1.0) as confidence
+    """
+    
+    records = await neo4j.execute_read(query, params)
+    
+    relationships = [
+        RelationshipResponse(
+            id=str(r["id"]),
+            source_id=r["source_id"],
+            target_id=r["target_id"],
+            type=r["type"],
+            reason=r["reason"],
+            confidence=r["confidence"],
+        )
+        for r in records
+    ]
+    
+    return relationships
 
 
 @router.delete("/relationships/{relationship_id}")
@@ -176,6 +265,7 @@ async def delete_relationship(
 
 @router.get("/visualize", response_model=GraphSubset)
 async def visualize_graph(
+    request: Request,
     user_id: Annotated[UUID, Depends(get_current_user_id)],
     center_entity: str | None = Query(default=None),
     depth: int = Query(default=2, ge=1, le=5),
@@ -185,10 +275,43 @@ async def visualize_graph(
     
     Returns nodes and edges suitable for D3.js rendering.
     """
-    # TODO: Implement graph traversal for visualization
+    neo4j = request.app.state.neo4j
+    
+    # Get all entities with relationships
+    query = """
+    MATCH (n:Entity)
+    OPTIONAL MATCH (n)-[r]-(m:Entity)
+    WITH collect(DISTINCT {
+        id: coalesce(n.id, n.name),
+        name: n.name,
+        type: n.type,
+        layer: coalesce(n.layer, 'global')
+    }) as nodes,
+    collect(DISTINCT {
+        source: coalesce(startNode(r).id, startNode(r).name),
+        target: coalesce(endNode(r).id, endNode(r).name),
+        type: type(r),
+        reason: r.reason,
+        confidence: coalesce(r.confidence, 1.0)
+    }) as edges
+    RETURN nodes[$skip..$max_nodes] as nodes, [e in edges WHERE e.source IS NOT NULL][$skip..$max_edges] as edges
+    """
+    params = {"max_nodes": max_nodes, "max_edges": max_nodes * 2, "skip": 0}
+    
+    records = await neo4j.execute_read(query, params)
+    
+    if records:
+        nodes = records[0].get("nodes", [])
+        edges = records[0].get("edges", [])
+    else:
+        nodes = []
+        edges = []
+    
+    logger.info("graph_visualize", nodes_count=len(nodes), edges_count=len(edges))
+    
     return GraphSubset(
-        nodes=[],
-        edges=[],
+        nodes=nodes,
+        edges=edges,
         reasoning_paths=None,
     )
 
@@ -210,9 +333,29 @@ async def find_paths(
 
 @router.get("/centrality")
 async def get_centrality(
+    request: Request,
     user_id: Annotated[UUID, Depends(get_current_user_id)],
     entity_ids: list[str] = Query(default=[]),
 ) -> dict[str, int]:
     """Get degree centrality for entities."""
-    # TODO: Implement centrality calculation
-    return {}
+    neo4j = request.app.state.neo4j
+    
+    if entity_ids:
+        query = """
+        MATCH (e:Entity)-[r]-()
+        WHERE e.id IN $entity_ids OR e.name IN $entity_ids
+        RETURN coalesce(e.id, e.name) as id, count(r) as degree
+        """
+        params = {"entity_ids": entity_ids}
+    else:
+        query = """
+        MATCH (e:Entity)-[r]-()
+        RETURN coalesce(e.id, e.name) as id, count(r) as degree
+        ORDER BY degree DESC
+        LIMIT 50
+        """
+        params = {}
+    
+    records = await neo4j.execute_read(query, params)
+    
+    return {r["id"]: r["degree"] for r in records}

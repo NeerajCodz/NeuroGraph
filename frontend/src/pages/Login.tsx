@@ -1,20 +1,16 @@
-﻿import React from 'react';
+import React from 'react';
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Network, LockKeyhole } from 'lucide-react';
-import { Particles } from '@/components/animations/Particles';
-import { BlurText } from '@/components/reactbits/BlurText';
-import { SpotlightCard } from '@/components/reactbits/SpotlightCard';
-import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { Network, ArrowLeft } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import LiquidEther from '@/components/landing/LiquidEther';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -24,62 +20,88 @@ export default function Login() {
   };
 
   return (
-    <div className="fixed inset-0 flex h-screen w-screen items-center justify-center overflow-hidden bg-[#05020f]">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-6%] top-[-8%] h-72 w-72 rounded-full bg-purple-500/35 blur-[90px]" />
-        <div className="absolute right-[-5%] top-[42%] h-80 w-80 rounded-full bg-fuchsia-500/20 blur-[110px]" />
-        <div className="absolute bottom-[-16%] left-[26%] h-80 w-80 rounded-full bg-indigo-500/25 blur-[110px]" />
+    <div className="relative flex h-screen w-full bg-[#050110] items-center justify-center overflow-hidden text-white font-sans">
+      
+      {/* 1. Full Screen Liquid Ether Background */}
+      <div className="absolute inset-0 z-0 opacity-80 pointer-events-none">
+        <LiquidEther
+            colors={['#5227FF', '#FF9FFC', '#B19EEF']}
+            mouseForce={20}
+            cursorSize={100}
+            isViscous
+            viscous={30}
+            iterationsViscous={32}
+            iterationsPoisson={32}
+            resolution={0.5}
+            isBounce={false}
+            autoDemo
+            autoSpeed={0.5}
+            autoIntensity={2.2}
+            takeoverDuration={0.25}
+            autoResumeDelay={3000}
+            autoRampDuration={0.6}
+            color0="#5227FF"
+            color1="#FF9FFC"
+            color2="#B19EEF"
+        />
+        <div className="absolute inset-0 bg-[#050110]/20 mix-blend-multiply" />
       </div>
 
-      <Particles color="rgba(197, 151, 255, 0.24)" count={110} />
-
-      <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 w-full max-w-md p-4"
+      {/* Back Button */}
+      <Link 
+        to="/" 
+        className="absolute top-6 left-6 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-colors backdrop-blur-md"
       >
-        <SpotlightCard className="glass-panel purple-stroke rounded-3xl border-white/15" spotlightColor="rgba(188, 137, 255, 0.3)">
-          <Card className="border-none bg-transparent text-slate-100 shadow-none">
-            <CardHeader className="items-center space-y-4 pt-8">
-              <div className="gradient-primary flex h-16 w-16 items-center justify-center rounded-2xl border border-white/20 shadow-[0_16px_26px_-14px_rgba(164,109,255,1)]">
-                <Network className="h-8 w-8 text-primary-foreground" />
-              </div>
+        <ArrowLeft className="w-4 h-4" /> Back to Home
+      </Link>
 
-              <div className="text-center space-y-2">
-                <CardTitle className="text-3xl font-bold tracking-tight text-white">
-                  <BlurText text="NeuroGraph" delay={50} direction="bottom" animateBy="letters" />
-                </CardTitle>
-                <CardDescription className="text-white/65">
-                  Enterprise Knowledge Context System
-                </CardDescription>
-              </div>
-            </CardHeader>
+      {/* 2. Simplified Black Glass Auth Popup */}
+      <div className="relative z-10 w-full max-w-[400px]">
+        <Card className="border border-white/10 bg-black/60 shadow-[0_0_60px_rgba(82,39,255,0.2)] backdrop-blur-2xl rounded-3xl p-6 md:p-8">
+          <CardHeader className="space-y-4 px-0 pt-0 pb-6 flex flex-col items-center text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#5227FF] to-[#8638FF] border border-white/20 shadow-[0_4px_20px_rgba(82,39,255,0.4)]">
+              <Network className="h-7 w-7 text-white" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-2xl font-bold tracking-tight text-white drop-shadow-md">
+                Welcome Back
+              </CardTitle>
+              <CardDescription className="text-purple-200/60 font-medium">
+                NeuroGraph Core
+              </CardDescription>
+            </div>
+          </CardHeader>
 
-            <CardContent>
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Input type="email" placeholder="name@example.com" className="h-12 border-white/12 bg-black/25 text-white placeholder:text-white/35 focus-visible:border-purple-300/40 focus-visible:ring-purple-400/35" />
-                </div>
-                <div className="space-y-2">
-                  <Input type="password" placeholder="••••••••" className="h-12 border-white/12 bg-black/25 text-white placeholder:text-white/35 focus-visible:border-purple-300/40 focus-visible:ring-purple-400/35" />
-                </div>
-                <Button type="submit" className="gradient-primary h-11 w-full text-md font-semibold text-primary-foreground transition-all hover:brightness-110">
-                  Sign In
-                </Button>
-              </form>
-            </CardContent>
-
-            <CardFooter className="flex-col justify-center gap-2 pb-7 pt-2">
-              <div className="flex items-center gap-2 text-xs text-white/50">
-                <LockKeyhole className="h-3.5 w-3.5" />
-                By signing in, you agree to our Terms of Service
+          <CardContent className="px-0">
+            <form onSubmit={handleLogin} className="space-y-4">
+              <Input 
+                type="email" 
+                placeholder="name@example.com" 
+                className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-purple-500/50 focus-visible:ring-purple-500/30 rounded-xl transition-colors" 
+              />
+              <Input 
+                type="password" 
+                placeholder="••••••••" 
+                className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-purple-500/50 focus-visible:ring-purple-500/30 rounded-xl transition-colors" 
+              />
+              <Button 
+                type="submit" 
+                className="h-12 w-full text-base font-semibold text-white bg-gradient-to-r from-[#5227FF] to-[#8638FF] hover:from-[#663fff] hover:to-[#9a54ff] transition-all rounded-xl shadow-[0_0_20px_rgba(82,39,255,0.3)] border border-purple-400/20 mt-4"
+              >
+                Sign In
+              </Button>
+              
+              <div className="mt-8 text-center text-sm text-white/50 font-medium">
+                Don't have an account?{' '}
+                <Link to="/signup" className="text-white hover:text-purple-300 transition-colors ml-1">
+                  Create one
+                </Link>
               </div>
-            </CardFooter>
-          </Card>
-        </SpotlightCard>
-      </motion.div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+
     </div>
   );
 }
-

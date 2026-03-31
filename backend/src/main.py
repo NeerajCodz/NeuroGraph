@@ -34,6 +34,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await postgres_driver.connect()
     await redis_driver.connect()
     
+    # Store on app.state for access in routes
+    app.state.neo4j = neo4j_driver
+    app.state.postgres = postgres_driver
+    app.state.redis = redis_driver
+    
     logger.info("databases_connected")
     
     yield
