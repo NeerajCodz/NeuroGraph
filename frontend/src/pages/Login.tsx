@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -8,15 +8,42 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Network, ArrowLeft } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Network, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import LiquidEther from '@/components/landing/LiquidEther';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Login() {
   const navigate = useNavigate();
-  const handleLogin = (e: React.FormEvent) => {
+  const location = useLocation();
+  const { login, isAuthenticated } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Redirect if already authenticated
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      const from = (location.state as { from?: Location })?.from?.pathname || '/chat';
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, location.state]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/chat');
+    setError('');
+    setIsLoading(true);
+    
+    try {
+      await login(email, password);
+      const from = (location.state as { from?: Location })?.from?.pathname || '/chat';
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed. Please check your credentials.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -74,21 +101,43 @@ export default function Login() {
 
           <CardContent className="px-0">
             <form onSubmit={handleLogin} className="space-y-4">
+              {error && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
               <Input 
                 type="email" 
-                placeholder="name@example.com" 
+                placeholder="name@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isLoading}
                 className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-purple-500/50 focus-visible:ring-purple-500/30 rounded-xl transition-colors" 
               />
               <Input 
                 type="password" 
-                placeholder="••••••••" 
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLoading}
                 className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-purple-500/50 focus-visible:ring-purple-500/30 rounded-xl transition-colors" 
               />
               <Button 
-                type="submit" 
-                className="h-12 w-full text-base font-semibold text-white bg-gradient-to-r from-[#5227FF] to-[#8638FF] hover:from-[#663fff] hover:to-[#9a54ff] transition-all rounded-xl shadow-[0_0_20px_rgba(82,39,255,0.3)] border border-purple-400/20 mt-4"
+                type="submit"
+                disabled={isLoading}
+                className="h-12 w-full text-base font-semibold text-white bg-gradient-to-r from-[#5227FF] to-[#8638FF] hover:from-[#663fff] hover:to-[#9a54ff] transition-all rounded-xl shadow-[0_0_20px_rgba(82,39,255,0.3)] border border-purple-400/20 mt-4 disabled:opacity-50"
               >
-                Sign In
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign In'
+                )}
               </Button>
               
               <div className="mt-8 text-center text-sm text-white/50 font-medium">

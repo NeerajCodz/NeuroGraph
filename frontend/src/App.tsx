@@ -9,15 +9,39 @@ import Login from '@/pages/Login';
 import Signup from '@/pages/Signup';
 import Settings from '@/pages/Settings';
 import Admin from '@/pages/Admin';
+import Memory from '@/pages/Memory';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 
+// Protected route wrapper
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-[#090512]">
+        <div className="animate-pulse text-white/60">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function Layout() {
   const location = useLocation();
+  useAuth(); // Ensure user is authenticated
   const isChatRoute = location.pathname.startsWith('/chat');
   const pageTitle = useMemo(() => {
     if (location.pathname.startsWith('/graph')) return 'Knowledge Graph';
+    if (location.pathname.startsWith('/memory')) return 'Memory Store';
     if (location.pathname.startsWith('/settings')) return 'System Settings';
     if (location.pathname.startsWith('/admin')) return 'Admin Center';
     return 'Intelligence Chat';
@@ -52,6 +76,7 @@ function Layout() {
               <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/chat" element={<div className="flex h-full min-h-0 w-full"><Chat /></div>} />
               <Route path="/graph" element={<Graph />} />
+              <Route path="/memory" element={<Memory />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<Admin />} />
             </Routes>
@@ -65,14 +90,20 @@ function Layout() {
 function App() {
   return (
     <Router>
-      <TooltipProvider>
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/*" element={<Layout />} />
-        </Routes>
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/*" element={
+              <RequireAuth>
+                <Layout />
+              </RequireAuth>
+            } />
+          </Routes>
+        </TooltipProvider>
+      </AuthProvider>
     </Router>
   );
 }

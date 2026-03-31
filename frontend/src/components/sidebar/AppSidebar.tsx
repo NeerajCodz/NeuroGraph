@@ -6,7 +6,8 @@ import {
   Shield,
   LogOut,
   Bell,
-  Rocket
+  Rocket,
+  Brain
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -33,9 +34,11 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { ShinyText } from '@/components/reactbits/ShinyText';
+import { useAuth } from '@/contexts/AuthContext';
 
 const items = [
   { title: 'Intelligence Chat', subtitle: 'live reasoning', url: '/chat', icon: MessageSquare },
+  { title: 'Memory Store', subtitle: 'knowledge base', url: '/memory', icon: Brain },
 ];
 
 const chatHistoryItems = [
@@ -53,13 +56,19 @@ const footerItems = [
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   // Safe default destructured from context hook
   const { isMobile = false, state = 'expanded' } = useSidebar() || {};
   const collapsed = state === 'collapsed';
 
   const handleLogout = () => {
+    logout();
     navigate('/login');
   };
+  
+  const userInitials = user?.full_name
+    ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : user?.email?.slice(0, 2).toUpperCase() || 'U';
 
   return (
     <Sidebar collapsible="icon" className="font-sans">
@@ -193,12 +202,12 @@ export function AppSidebar() {
               <DropdownMenuTrigger className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-white/5 p-2.5 text-left transition hover:bg-white/10">
                 <Avatar className="h-10 w-10 shrink-0 ring-1 ring-purple-200/30 transition-all group-hover:ring-purple-200/55">
                   <AvatarImage src="" alt="User" />
-                  <AvatarFallback className="gradient-primary text-[11px] font-semibold text-primary-foreground">AD</AvatarFallback>
+                  <AvatarFallback className="gradient-primary text-[11px] font-semibold text-primary-foreground">{userInitials}</AvatarFallback>
                 </Avatar>
                 {!collapsed && (
                   <div className="flex min-w-0 flex-col text-sm">
-                    <span className="truncate font-semibold text-white">System Admin</span>
-                    <span className="truncate text-[10px] uppercase tracking-[0.2em] text-white/45">admin@neurograph</span>
+                    <span className="truncate font-semibold text-white">{user?.full_name || 'User'}</span>
+                    <span className="truncate text-[10px] uppercase tracking-[0.2em] text-white/45">{user?.email || ''}</span>
                   </div>
                 )}
               </DropdownMenuTrigger>
@@ -210,11 +219,11 @@ export function AppSidebar() {
                 <DropdownMenuLabel className="p-0 font-normal mb-3">
                   <div className="flex items-center gap-3 rounded-xl bg-white/5 px-2 py-2 text-left text-sm">
                     <Avatar className="h-10 w-10 border border-white/10 shadow-sm">
-                      <AvatarFallback className="gradient-primary text-xs text-primary-foreground">AD</AvatarFallback>
+                      <AvatarFallback className="gradient-primary text-xs text-primary-foreground">{userInitials}</AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-bold text-white">System Admin</span>
-                      <span className="truncate text-xs text-white/50">admin@neurograph</span>
+                      <span className="truncate font-bold text-white">{user?.full_name || 'User'}</span>
+                      <span className="truncate text-xs text-white/50">{user?.email || ''}</span>
                     </div>
                   </div>
                 </DropdownMenuLabel>

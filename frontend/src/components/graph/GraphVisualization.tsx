@@ -1,13 +1,16 @@
-﻿import React, { useEffect, useRef } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { Button } from '@/components/ui/button';
-import { Maximize2, ZoomIn, ZoomOut, Activity, Radar } from 'lucide-react';
+import { Maximize2, ZoomIn, ZoomOut, Radar, Loader2, RefreshCw } from 'lucide-react';
+import { graphApi } from '@/services/api';
+import type { GraphVisualization as GraphVizData, GraphNode as ApiNode, GraphEdge as ApiEdge } from '@/types/api';
 
 type GraphNode = d3.SimulationNodeDatum & {
   id: string;
   label: string;
-  type: 'Core' | 'Team' | 'Project' | 'Risk';
-  risk: number;
+  type: string;
+  layer: string;
+  confidence?: number;
 };
 
 type GraphLink = d3.SimulationLinkDatum<GraphNode> & {
@@ -15,42 +18,67 @@ type GraphLink = d3.SimulationLinkDatum<GraphNode> & {
   target: string | GraphNode;
   weight: number;
   relation: string;
+  reason?: string | null;
 };
 
-const nodeSeed: GraphNode[] = [
-  { id: 'core-1', label: 'Orchestrator', type: 'Core', risk: 0.18 },
-  { id: 'proj-452', label: 'Node 452', type: 'Project', risk: 0.73 },
-  { id: 'proj-507', label: 'Node 507', type: 'Project', risk: 0.84 },
-  { id: 'team-alpha', label: 'Team Alpha', type: 'Team', risk: 0.52 },
-  { id: 'team-beta', label: 'Team Beta', type: 'Team', risk: 0.66 },
-  { id: 'risk-iam', label: 'IAM Drift', type: 'Risk', risk: 0.78 },
-  { id: 'risk-rollout', label: 'Rollout Gate', type: 'Risk', risk: 0.71 },
-];
-
-const linkSeed: GraphLink[] = [
-  { source: 'core-1', target: 'proj-452', weight: 0.88, relation: 'routes' },
-  { source: 'core-1', target: 'proj-507', weight: 0.75, relation: 'routes' },
-  { source: 'proj-452', target: 'team-alpha', weight: 0.81, relation: 'owned_by' },
-  { source: 'proj-507', target: 'team-beta', weight: 0.84, relation: 'owned_by' },
-  { source: 'proj-452', target: 'risk-iam', weight: 0.78, relation: 'triggers' },
-  { source: 'proj-507', target: 'risk-rollout', weight: 0.71, relation: 'triggers' },
-  { source: 'team-alpha', target: 'team-beta', weight: 0.62, relation: 'conflicts_with' },
-];
-
-const nodeColor: Record<GraphNode['type'], string> = {
-  Core: '#b084ff',
-  Team: '#7fb5ff',
+const typeColors: Record<string, string> = {
+  Person: '#7fb5ff',
+  Organization: '#b084ff',
   Project: '#dd8cff',
-  Risk: '#ff8d9d',
+  Technology: '#7bffa3',
+  Concept: '#ff8d9d',
+  default: '#b084ff',
+};
+
+const layerColors: Record<string, string> = {
+  personal: '#b084ff',
+  tenant: '#7fb5ff',
+  global: '#7bffa3',
 };
 
 export default function GraphVisualization() {
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
-  const [selectedNode, setSelectedNode] = React.useState<GraphNode | null>(null);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; links: GraphLink[] } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchGraphData = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const data = await graphApi.getVisualization(undefined, 3, 100) as GraphVizData;
+      
+      const nodes: GraphNode[] = (data.nodes || []).map((n: ApiNode) => ({
+        id: n.id,
+        label: n.name,
+        type: n.type,
+        layer: n.layer,
+      }));
+
+      const links: GraphLink[] = (data.edges || []).map((e: ApiEdge) => ({
+        source: e.source,
+        target: e.target,
+        weight: e.confidence || 0.5,
+        relation: e.type,
+        reason: e.reason,
+      }));
+
+      setGraphData({ nodes, links });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load graph');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!svgRef.current) return;
+    fetchGraphData();
+  }, []);
+
+  useEffect(() => {
+    if (!svgRef.current || !graphData || graphData.nodes.length === 0) return;
 
     const svgElement = svgRef.current;
     const svg = d3.select(svgRef.current);
@@ -61,8 +89,8 @@ export default function GraphVisualization() {
 
       svg.selectAll('*').remove();
 
-      const nodes: GraphNode[] = nodeSeed.map((node) => ({ ...node }));
-      const links: GraphLink[] = linkSeed.map((link) => ({ ...link }));
+      const nodes: GraphNode[] = graphData.nodes.map((node) => ({ ...node }));
+      const links: GraphLink[] = graphData.links.map((link) => ({ ...link }));
 
       const defs = svg.append('defs');
       const glow = defs.append('filter').attr('id', 'node-glow').attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%');
@@ -95,14 +123,17 @@ export default function GraphVisualization() {
         .attr('stroke-linecap', 'round');
 
       const linkLabel = labelLayer
-        .selectAll('text')
+        .selectAll('text.link-label')
         .data(links)
         .join('text')
+        .attr('class', 'link-label')
         .text((d) => d.relation)
         .attr('fill', 'rgba(236, 220, 255, 0.62)')
-        .attr('font-size', 10)
+        .attr('font-size', 9)
         .attr('text-anchor', 'middle')
         .attr('letter-spacing', '0.08em');
+
+      const getNodeColor = (d: GraphNode) => typeColors[d.type] || typeColors.default;
 
       const node = nodeLayer
         .selectAll<SVGGElement, GraphNode>('g')
@@ -113,26 +144,26 @@ export default function GraphVisualization() {
 
       node
         .append('circle')
-        .attr('r', (d) => (d.type === 'Core' ? 24 : 18))
-        .attr('fill', (d) => nodeColor[d.type])
+        .attr('r', 20)
+        .attr('fill', (d) => getNodeColor(d))
         .attr('fill-opacity', 0.25)
-        .attr('stroke', (d) => nodeColor[d.type])
+        .attr('stroke', (d) => getNodeColor(d))
         .attr('stroke-width', 1.2)
         .attr('filter', 'url(#node-glow)');
 
       node
         .append('circle')
-        .attr('r', (d) => (d.type === 'Core' ? 12 : 9.5))
-        .attr('fill', (d) => nodeColor[d.type]);
+        .attr('r', 10)
+        .attr('fill', (d) => getNodeColor(d));
 
       node
         .append('text')
-        .attr('dy', (d) => (d.type === 'Core' ? 38 : 31))
+        .attr('dy', 34)
         .attr('fill', 'rgba(249, 239, 255, 0.9)')
-        .attr('font-size', 11)
+        .attr('font-size', 10)
         .attr('font-weight', 600)
         .attr('text-anchor', 'middle')
-        .text((d) => d.label);
+        .text((d) => d.label.length > 15 ? d.label.slice(0, 15) + '...' : d.label);
 
       const simulation = d3
         .forceSimulation(nodes)
@@ -141,12 +172,12 @@ export default function GraphVisualization() {
           d3
             .forceLink<GraphNode, GraphLink>(links)
             .id((d) => d.id)
-            .distance((d) => 96 + (1 - d.weight) * 90)
-            .strength(0.65)
+            .distance((d) => 100 + (1 - d.weight) * 80)
+            .strength(0.6)
         )
-        .force('charge', d3.forceManyBody().strength(-350))
+        .force('charge', d3.forceManyBody().strength(-300))
         .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collide', d3.forceCollide<GraphNode>().radius((d) => (d.type === 'Core' ? 46 : 34)));
+        .force('collide', d3.forceCollide<GraphNode>().radius(40));
 
       const drag = d3
         .drag<SVGGElement, GraphNode>()
@@ -199,7 +230,7 @@ export default function GraphVisualization() {
       window.removeEventListener('resize', handleResize);
       cleanup();
     };
-  }, []);
+  }, [graphData]);
 
   const handleZoomIn = () => {
     if (!svgRef.current || !zoomBehaviorRef.current) return;
@@ -225,6 +256,43 @@ export default function GraphVisualization() {
       .call(zoomBehaviorRef.current.transform as never, d3.zoomIdentity);
   };
 
+  if (isLoading) {
+    return (
+      <div className="relative h-full w-full overflow-hidden rounded-3xl border border-white/10 bg-[#080513]/65 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
+          <p className="text-white/60">Loading knowledge graph...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="relative h-full w-full overflow-hidden rounded-3xl border border-white/10 bg-[#080513]/65 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <p className="text-red-300">{error}</p>
+          <Button variant="outline" onClick={fetchGraphData} className="text-white border-white/20">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!graphData || graphData.nodes.length === 0) {
+    return (
+      <div className="relative h-full w-full overflow-hidden rounded-3xl border border-white/10 bg-[#080513]/65 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <Radar className="w-12 h-12 text-purple-400/30" />
+          <p className="text-white/60">No nodes in the knowledge graph yet</p>
+          <p className="text-white/40 text-sm">Add memories to start building your graph</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="group relative h-full w-full overflow-hidden rounded-3xl border border-white/10 bg-[#080513]/65">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(178,111,255,0.22),transparent_58%)]" />
@@ -234,9 +302,18 @@ export default function GraphVisualization() {
         <p className="text-[10px] uppercase tracking-[0.22em] text-purple-200/65">Graph Signal</p>
         <div className="mt-1 flex items-center gap-2 text-sm text-white/90">
           <Radar className="size-4 text-purple-300" />
-          7 nodes • 7 relations
+          {graphData.nodes.length} nodes • {graphData.links.length} relations
         </div>
       </div>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute left-4 bottom-4 h-9 w-9 rounded-full bg-black/30 text-white/80 hover:bg-white/12 hover:text-white backdrop-blur-md"
+        onClick={fetchGraphData}
+      >
+        <RefreshCw className="h-4 w-4" />
+      </Button>
 
       {selectedNode && (
         <div className="absolute right-4 top-4 w-64 rounded-2xl border border-white/15 bg-[#130b29]/92 p-3 text-white shadow-xl backdrop-blur-md">
@@ -248,10 +325,20 @@ export default function GraphVisualization() {
               <strong className="text-purple-100">{selectedNode.type}</strong>
             </div>
             <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
-              <span className="flex items-center gap-1"><Activity className="size-3.5" />Risk Score</span>
-              <strong className="text-fuchsia-200">{selectedNode.risk.toFixed(2)}</strong>
+              <span>Layer</span>
+              <strong style={{ color: layerColors[selectedNode.layer] || '#fff' }}>{selectedNode.layer}</strong>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
+              <span>ID</span>
+              <strong className="text-white/60 font-mono text-[10px]">{selectedNode.id.slice(0, 12)}...</strong>
             </div>
           </div>
+          <button
+            onClick={() => setSelectedNode(null)}
+            className="mt-3 w-full text-center text-xs text-white/40 hover:text-white/60"
+          >
+            Click to dismiss
+          </button>
         </div>
       )}
 

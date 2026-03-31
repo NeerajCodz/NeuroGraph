@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -8,15 +8,49 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Network, ArrowLeft } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Network, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import LiquidEther from '@/components/landing/LiquidEther';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Signup() {
   const navigate = useNavigate();
-  const handleSignup = (e: React.FormEvent) => {
+  const location = useLocation();
+  const { register, isAuthenticated } = useAuth();
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Redirect if already authenticated
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      const from = (location.state as { from?: Location })?.from?.pathname || '/chat';
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, location.state]);
+
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/chat');
+    setError('');
+    
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      await register(email, password, fullName);
+      const from = (location.state as { from?: Location })?.from?.pathname || '/chat';
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -74,26 +108,53 @@ export default function Signup() {
 
           <CardContent className="px-0">
             <form onSubmit={handleSignup} className="space-y-4">
+              {error && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
               <Input
                 type="text"
                 placeholder="Full Name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+                disabled={isLoading}
                 className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-fuchsia-500/50 focus-visible:ring-fuchsia-500/30 rounded-xl transition-colors"
               />
               <Input
                 type="email"
                 placeholder="name@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isLoading}
                 className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-fuchsia-500/50 focus-visible:ring-fuchsia-500/30 rounded-xl transition-colors"
               />
               <Input
                 type="password"
                 placeholder="Create Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLoading}
+                minLength={6}
                 className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-fuchsia-500/50 focus-visible:ring-fuchsia-500/30 rounded-xl transition-colors"
               />
               <Button
                 type="submit"
-                className="h-12 w-full text-base font-semibold text-[#050110] bg-gradient-to-r from-[#FF9FFC] to-[#f27eef] hover:from-[#ffb4fd] hover:to-[#f59ef2] transition-all rounded-xl shadow-[0_0_20px_rgba(255,159,252,0.3)] border border-fuchsia-300 mt-4"
+                disabled={isLoading}
+                className="h-12 w-full text-base font-semibold text-[#050110] bg-gradient-to-r from-[#FF9FFC] to-[#f27eef] hover:from-[#ffb4fd] hover:to-[#f59ef2] transition-all rounded-xl shadow-[0_0_20px_rgba(255,159,252,0.3)] border border-fuchsia-300 mt-4 disabled:opacity-50"
               >
-                Create Account
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating Account...
+                  </>
+                ) : (
+                  'Create Account'
+                )}
               </Button>
 
               <div className="mt-8 text-center text-sm text-white/50 font-medium">
