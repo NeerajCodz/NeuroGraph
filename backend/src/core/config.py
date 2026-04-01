@@ -118,6 +118,9 @@ class Settings(BaseSettings):
     # Gmail Integration
     gmail_pubsub_project_id: str | None = None
     gmail_pubsub_subscription: str | None = None
+    
+    # Notion Integration
+    notion_api_key: SecretStr | None = None
 
     @field_validator("scoring_semantic_weight", "scoring_hop_weight", 
                      "scoring_centrality_weight", "scoring_temporal_weight")

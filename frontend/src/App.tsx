@@ -41,6 +41,7 @@ function Layout() {
   useAuth(); // Ensure user is authenticated
   const { sidebarCollapsed, setSidebarCollapsed, compactMode, showConfidence, showReasoning } = useTheme();
   const isChatRoute = location.pathname.startsWith('/chat') || location.pathname === '/';
+  const isFullscreenRoute = isChatRoute || location.pathname.startsWith('/graph') || location.pathname.startsWith('/memory');
   const pageTitle = useMemo(() => {
     if (location.pathname.startsWith('/graph')) return 'Knowledge Graph';
     if (location.pathname.startsWith('/memory')) return 'Memory Store';
@@ -83,8 +84,8 @@ function Layout() {
 
           <div
             className={cn(
-              'relative z-10 flex-1 min-h-0 flex flex-col w-full',
-              isChatRoute ? 'overflow-hidden p-0' : compactMode ? 'overflow-y-auto p-1.5 md:p-2.5' : 'overflow-y-auto p-2 md:p-4',
+              'relative z-10 flex-1 h-full min-h-0 flex flex-col w-full',
+              isFullscreenRoute ? 'overflow-hidden p-0' : compactMode ? 'overflow-y-auto p-1.5 md:p-2.5' : 'overflow-y-auto p-2 md:p-4',
             )}
           >
             <Routes>
