@@ -3,12 +3,11 @@ import { motion } from 'framer-motion';
 import { BlurText } from '@/components/reactbits/BlurText';
 import ScrollFloat from '@/components/text/ScrollFloat';
 import Hyperspeed from '@/components/landing/Hyperspeed';
-import BorderGlow from '@/components/BorderGlow';
-import ShapeBlur from '@/components/ShapeBlur';
-import Iridescence from '@/components/Iridescence';
-import GradientBlinds from '@/components/GradientBlinds';
+import BorderGlow from '@/components/reactbits/BorderGlow';
+import GradientBlinds from '@/components/reactbits/GradientBlinds';
 import ArchitectureFlow from '@/components/landing/ArchitectureFlow';
-import { ArrowRight, Network, Sparkles, DatabaseZap } from 'lucide-react';
+import { ArrowRight, Sparkles } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Reusable scroll reveal wrapper
 const ScrollReveal = ({ children, className = '', delay = 0 }: { children: React.ReactNode, className?: string, delay?: number }) => (
@@ -24,6 +23,8 @@ const ScrollReveal = ({ children, className = '', delay = 0 }: { children: React
 );
 
 export default function Landing() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <div className="bg-[#050110] text-white min-h-screen font-sans selection:bg-purple-600/50 selection:text-white overflow-x-hidden">
 
@@ -44,27 +45,26 @@ export default function Landing() {
               totalSideLightSticks: 10,
               lightPairsPerRoadWay: 20,
               colors: {
-                roadColor: 0x050110,
-                islandColor: 0x070215,
-                background: 0x050110,
-                shoulderLines: 0x0b0520,
-                brokenLines: 0x0b0520,
-                leftCars: [0x5227ff, 0x8a2be2, 0x9400d3],
-                rightCars: [0x7b2cbf, 0x6a0dad, 0x4b0082],
-                sticks: 0x5a189a
+                roadColor: 0x120630,
+                islandColor: 0x170a3a,
+                background: 0x120630,
+                shoulderLines: 0x221045,
+                brokenLines: 0x221045,
+                leftCars: [0x7044ff, 0xa54bf7, 0xb82bf2],
+                rightCars: [0x974dff, 0x862cf2, 0x6e1ed9],
+                sticks: 0x8a2be2
               }
             }}
           />
         </div>
-        
-        {/* Gradient overlay for readability */}
-        <div className="absolute inset-0 z-[1] bg-gradient-to-b from-[#050110]/60 via-transparent to-[#050110]" />
-        <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_at_center,_transparent_0%,_rgba(5,1,16,0.7)_70%)]" />
 
+        {/* Gradient overlay for readability */}
+        <div className="absolute inset-0 z-[1] bg-gradient-to-b from-[#050110]/30 via-transparent to-[#050110]" />
+        <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_at_center,_transparent_0%,_rgba(5,1,16,0.4)_70%)]" />
         <header className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-6 md:px-12 pointer-events-auto">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-400 via-purple-300 to-fuchsia-300 shadow-[0_12px_28px_-14px_rgba(212,166,255,0.95)]">
-              <Network className="h-5 w-5 text-purple-950 stroke-[2.2]" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 via-fuchsia-500 to-purple-800 shadow-[0_0_20px_rgba(168,85,247,0.5)] border border-white/20">
+              <img src="/logo.svg" alt="NeuroGraph" className="h-6 w-6 brightness-0 invert" />
             </div>
             <span className="text-xl font-bold tracking-tight text-white drop-shadow-md">NeuroGraph</span>
           </div>
@@ -73,12 +73,26 @@ export default function Landing() {
             <a href="#orchestrator" className="hover:text-white transition">Orchestrator</a>
             <a href="#data" className="hover:text-white transition">Logic Flow</a>
           </div>
-          <Link to="/chat" className="flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-6 py-2.5 text-sm font-semibold text-white backdrop-blur-md transition hover:bg-purple-500/20 hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(82,39,255,0.3)]">
-            Launch App <ArrowRight className="h-4 w-4" />
+          <Link
+            to={isAuthenticated ? "/chat" : "/login"}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2 text-sm font-bold text-white rounded-full transition hover:bg-[#643dff] active:scale-95"
+            style={{
+              background: '#5227FF',
+              boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.28), inset 0 -2px 4px rgba(0,0,0,0.55), 0 0 20px rgba(82,39,255,0.45)',
+              borderTop: '0.8px solid rgba(255,255,255,0.35)',
+              borderBottom: '1.8px solid rgba(0,0,0,0.65)',
+              borderLeft: '1px solid rgba(255,255,255,0.18)',
+              borderRight: '1px solid rgba(255,255,255,0.12)',
+              textShadow: '0 1px 2px rgba(0,0,0,0.7)'
+            }}
+          >
+            {isAuthenticated ? 'Open' : 'Login'}
+            <ArrowRight className="h-4 w-4" />
           </Link>
         </header>
 
-        <div className="relative z-10 text-center max-w-4xl px-4 pointer-events-none mt-12">
+        <div className="relative w-full max-w-7xl mx-auto px-4 lg:px-8 mt-24 z-10 flex justify-center">
+          <div className="text-center flex flex-col items-center w-full max-w-4xl mx-auto pointer-events-none">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -92,7 +106,7 @@ export default function Landing() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.1 }}
-            className="text-5xl md:text-8xl font-black tracking-tighter mb-6 text-transparent bg-clip-text bg-gradient-to-br from-white via-purple-100 to-purple-400/80 filter drop-shadow-[0_0_30px_rgba(82,39,255,0.4)]"
+            className="text-5xl md:text-[5rem] lg:text-8xl font-black tracking-tighter mb-6 text-transparent bg-clip-text bg-gradient-to-br from-white via-purple-100 to-purple-400/80 filter drop-shadow-[0_0_30px_rgba(82,39,255,0.4)] text-center"
           >
             Neural-inspired <br />  memory system <br />
           </motion.h1>
@@ -102,7 +116,7 @@ export default function Landing() {
             delay={30}
             animateBy="words"
             direction="bottom"
-            className="mt-6 text-lg md:text-2xl font-light text-white/80 max-w-2xl mx-auto leading-relaxed"
+            className="mt-6 text-lg md:text-2xl font-light text-white/80 max-w-2xl text-center leading-relaxed"
           />
 
           <motion.div
@@ -115,6 +129,7 @@ export default function Landing() {
               Start Traversing
             </Link>
           </motion.div>
+          </div>
         </div>
 
         <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[#050110] to-transparent pointer-events-none" />
@@ -140,7 +155,7 @@ export default function Landing() {
 
       {/* 3. FEATURE CARDS (Simple Reveal Animation) */}
       <section id="orchestrator" className="min-h-screen py-20 bg-[#050110] flex flex-col items-center justify-center">
-        <ScrollReveal delay={0.2} className="text-center max-w-4xl mx-auto px-6 mb-20">
+        <ScrollReveal delay={0.2} className="text-left max-w-4xl mx-auto px-6 mb-20">
           <h2 className="text-5xl font-black text-white mb-6">Three-Layer Memory Architecture</h2>
           <p className="text-xl text-white/50">Personal, Organization, and Global knowledge with explainable reasoning.</p>
         </ScrollReveal>
@@ -222,47 +237,48 @@ export default function Landing() {
         </ScrollReveal>
       </section>
 
-      {/* 5. HYBRID INTELLIGENCE (Iridescence + ShapeBlur) */}
-      <section className="relative w-full min-h-screen bg-[#050110] flex flex-col items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 z-0">
-          <Iridescence
-            color={[0.5, 0.6, 0.8]}
-            mouseReact
-            amplitude={0.1}
-            speed={1}
-          />
-        </div>
-        <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_at_top,_rgba(177,158,239,0.26)_0%,_rgba(82,39,255,0.12)_35%,_rgba(5,1,16,0.92)_78%)]" />
-        <div className="absolute z-[2] h-[520px] w-[520px] -left-20 top-1/2 -translate-y-1/2 opacity-60 pointer-events-none">
-          <ShapeBlur
-            variation={2}
-            shapeSize={1.2}
-            roundness={0.5}
-            borderSize={0.045}
-            circleSize={0.28}
-            circleEdge={0.45}
-          />
-        </div>
-        <div className="absolute z-[2] h-[420px] w-[420px] -right-10 bottom-10 opacity-45 pointer-events-none">
-          <ShapeBlur
-            variation={0}
-            shapeSize={1.0}
-            roundness={0.42}
-            borderSize={0.055}
-            circleSize={0.24}
-            circleEdge={0.55}
-          />
-        </div>
-        <ScrollReveal className="relative z-10 text-center max-w-4xl px-4 pointer-events-none">
-          <DatabaseZap className="h-16 w-16 mx-auto mb-6 text-fuchsia-300 drop-shadow-[0_0_20px_rgba(255,159,252,0.6)]" />
-          <h2 className="text-5xl md:text-7xl font-black text-white mb-6 drop-shadow-2xl">Hyper Intelligence</h2>
-          <p className="text-xl text-purple-100/90 font-medium tracking-wide">
-            Graph memory, vector search, and web retrieval working together for complete context assembly.
+      
+      {/* 5. HYBRID INTELLIGENCE (GridMotion Graph Memory) */}
+      <section className="relative w-full min-h-screen bg-[#050110] flex flex-col items-center justify-center overflow-hidden border-t border-white/5">
+        <ScrollReveal className="relative z-10 text-center max-w-5xl px-4 pointer-events-none pb-20">
+          <h2 className="text-5xl md:text-7xl font-black text-white mb-6 drop-shadow-[0_0_80px_rgba(255,159,252,0.8)]">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-400 to-purple-600">Hyper Intelligence</span>
+          </h2>
+          <p className="text-2xl text-purple-100/90 font-medium tracking-wide max-w-3xl mx-auto mb-14 drop-shadow-lg">
+            An Agentic Context Engine with Explainable Graph Memory
           </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left max-w-4xl mx-auto pointer-events-auto relative mt-12">
+            
+            <div className="absolute inset-0 bg-fuchsia-500/10 blur-[80px] -z-10 rounded-full" />
+            
+            <div className="p-8 rounded-3xl bg-black/60 border border-fuchsia-500/30 backdrop-blur-xl hover:bg-black/40 transition-all hover:scale-[1.02] shadow-[0_0_40px_rgba(168,85,247,0.2)]">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center bg-gradient-to-br from-purple-600 via-fuchsia-500 to-purple-800 shadow-[0_0_25px_rgba(168,85,247,0.5)] border border-white/20 p-2.5">
+                  <img src="/logo.svg" alt="NeuroGraph" className="w-full h-full brightness-0 invert drop-shadow-[0_0_6px_rgba(255,255,255,0.5)]" />
+                </div>
+                <h3 className="text-2xl font-bold text-white">Three-Layer Graph</h3>
+              </div>
+              <p className="text-purple-100/80 leading-relaxed text-base pt-2">
+                Unlike traditional RAG systems, NeuroGraph actively builds dynamic context across <strong className="text-purple-300">Personal</strong>, <strong className="text-purple-300">Organization</strong>, and <strong className="text-purple-300">Global</strong> write-protected layers. Every fact is a semantically linked node, not just a document chunk.
+              </p>
+            </div>
+            
+            <div className="p-8 rounded-3xl bg-black/60 border border-purple-500/30 backdrop-blur-xl hover:bg-black/40 transition-all hover:scale-[1.02] shadow-[0_0_40px_rgba(168,85,247,0.2)]">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-fuchsia-500/20 flex items-center justify-center border border-fuchsia-500/30">
+                  <Sparkles className="w-6 h-6 text-fuchsia-300" />
+                </div>
+                <h3 className="text-2xl font-bold text-white">Explainable Reasoning</h3>
+              </div>
+              <p className="text-purple-100/80 leading-relaxed text-base pt-2">
+                Every relationship is stored with reason, timestamp, and a confidence score. This creates traceable reasoning paths and enables temporal decay degradation over time with full provenance tracking.
+              </p>
+            </div>
+          </div>
         </ScrollReveal>
       </section>
-
-      {/* 7. CALL TO ACTION & FOOTER (GradientBlinds + Liquid Glass Buttons) */}
+{/* 7. CALL TO ACTION & FOOTER (GradientBlinds + Liquid Glass Buttons) */}
       <section className="relative min-h-screen overflow-hidden bg-[#050110]">
         <div className="absolute inset-0 z-0 pointer-events-none">
           <GradientBlinds
@@ -322,8 +338,10 @@ export default function Landing() {
 
         <footer className="absolute bottom-0 left-0 right-0 z-50 p-6 flex flex-col md:flex-row items-center justify-between border-t border-purple-500/20 bg-black/40 backdrop-blur-md pointer-events-auto">
           <div className="flex items-center gap-2 mb-4 md:mb-0">
-            <Network className="h-4 w-4 text-purple-400" />
-            <span className="text-sm font-semibold text-white tracking-widest uppercase">NeuroGraph</span>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-600 via-fuchsia-500 to-purple-800 shadow-[0_0_15px_rgba(168,85,247,0.4)] border border-white/20 p-1.5">
+              <img src="/logo.svg" alt="NeuroGraph" className="w-full h-full brightness-0 invert drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]" />
+            </div>
+            <span className="text-sm font-bold text-white tracking-widest uppercase drop-shadow-sm">NeuroGraph</span>
           </div>
           <div className="text-xs text-white/50 text-center md:text-right font-medium">
             © 2026 NeerajCodz<br />
@@ -335,3 +353,5 @@ export default function Landing() {
     </div>
   );
 }
+
+

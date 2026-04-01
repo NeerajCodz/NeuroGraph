@@ -8,6 +8,47 @@
 
 ## 2. Build
 
+Preferred scripted builds write artifacts to `cli/build/output` only.
+
+PowerShell:
+
+```powershell
+Set-Location E:\codz\Projects\NeuroGraph\cli
+.\builds\build.ps1 -Target current
+```
+
+Shell:
+
+```bash
+cd /path/to/NeuroGraph/cli
+sh ./builds/build.sh current
+```
+
+Note for WSL users:
+
+- `build.sh` runs inside Linux userspace and requires `go` installed in WSL.
+- If Go is only installed on Windows, use `build.ps1` instead.
+
+Build all cross-platform targets:
+
+```powershell
+.\builds\build.ps1 -Target all
+```
+
+```bash
+sh ./builds/build.sh all
+```
+
+Clean build artifacts:
+
+```powershell
+.\builds\build.ps1 -Target clean
+```
+
+```bash
+sh ./builds/build.sh clean
+```
+
 From repository root:
 
 ```powershell
@@ -15,7 +56,7 @@ Set-Location E:\codz\Projects\NeuroGraph\cli
 go build ./cmd/neurograph
 ```
 
-This produces `neurograph.exe` in `cli/`.
+Direct `go build` without `-o` may produce binaries in `cli/`. Prefer scripts above to keep artifacts in `build/output`.
 
 ## 3. Basic usage
 

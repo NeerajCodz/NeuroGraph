@@ -8,10 +8,11 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Network, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import LiquidEther from '@/components/landing/LiquidEther';
 import { useAuth } from '@/contexts/AuthContext';
+import BorderGlow from '@/components/reactbits/BorderGlow';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -88,14 +89,33 @@ export default function Login() {
       </Link>
 
       {/* 2. Simplified Black Glass Auth Popup */}
-      <div className="relative z-10 w-full max-w-[400px]">
-        <Card className="border border-white/10 bg-black/60 shadow-[0_0_60px_rgba(82,39,255,0.2)] backdrop-blur-2xl rounded-3xl p-6 md:p-8">
-          <CardHeader className="space-y-4 px-0 pt-0 pb-6 flex flex-col items-center text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#5227FF] to-[#8638FF] border border-white/20 shadow-[0_4px_20px_rgba(82,39,255,0.4)]">
-              <Network className="h-7 w-7 text-white" />
+      <BorderGlow 
+        className="relative z-10 w-full max-w-[400px] border-none"
+        glowColor="300 80 50" 
+        borderRadius={32}
+        glowRadius={40}
+        glowIntensity={1.2}
+        colors={['#c084fc', '#FF9FFC', '#5227FF']}
+        fillOpacity={0}
+        edgeSensitivity={30}
+      >
+        <Card 
+          className="w-full relative overflow-hidden bg-black/60 backdrop-blur-2xl rounded-[32px] text-white transition-all duration-300"
+          style={{
+            border: 'none',
+            borderTop: '0.5px solid rgba(255,255,255,0.1)',
+            borderLeft: '0.5px solid rgba(255,255,255,0.05)',
+            borderRight: '0.5px solid rgba(0,0,0,0.4)',
+            borderBottom: '1px solid rgba(0,0,0,0.8)',
+            boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.1), inset 0 -4px 10px rgba(0,0,0,0.8), 0 15px 30px rgba(0,0,0,0.6)'
+          }}
+        >
+          <CardHeader className="space-y-4 px-6 pt-10 pb-6 flex flex-col items-center text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 via-purple-500 to-fuchsia-600 shadow-[0_0_30px_rgba(168,85,247,0.4)] border border-white/20 p-3">
+              <img src="/logo.svg" alt="NeuroGraph" className="w-full h-full brightness-0 invert drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
             </div>
             <div className="space-y-1">
-              <CardTitle className="text-2xl font-bold tracking-tight text-white drop-shadow-md">
+              <CardTitle className="text-3xl font-bold tracking-tight text-white drop-shadow-md">
                 Welcome Back
               </CardTitle>
               <CardDescription className="text-purple-200/60 font-medium">
@@ -104,8 +124,8 @@ export default function Login() {
             </div>
           </CardHeader>
 
-          <CardContent className="px-0">
-            <form onSubmit={handleLogin} className="space-y-4">
+          <CardContent className="px-8 pb-10">
+            <form onSubmit={handleLogin} className="space-y-5">
               {error && (
                 <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -119,7 +139,7 @@ export default function Login() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 disabled={isLoading}
-                className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-purple-500/50 focus-visible:ring-purple-500/30 rounded-xl transition-colors" 
+                className="h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 rounded-xl focus-visible:ring-purple-500 focus-visible:border-purple-500 transition-all font-medium px-4" 
               />
               <Input 
                 type="password" 
@@ -128,33 +148,44 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={isLoading}
-                className="h-12 border-white/10 bg-black/50 text-white placeholder:text-white/40 focus-visible:border-purple-500/50 focus-visible:ring-purple-500/30 rounded-xl transition-colors" 
+                className="h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 rounded-xl focus-visible:ring-fuchsia-500 focus-visible:border-fuchsia-500 transition-all font-medium px-4 tracking-widest" 
               />
-              <Button 
-                type="submit"
-                disabled={isLoading}
-                className="h-12 w-full text-base font-semibold text-white bg-gradient-to-r from-[#5227FF] to-[#8638FF] hover:from-[#663fff] hover:to-[#9a54ff] transition-all rounded-xl shadow-[0_0_20px_rgba(82,39,255,0.3)] border border-purple-400/20 mt-4 disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Signing in...
-                  </>
-                ) : (
-                  'Sign In'
-                )}
-              </Button>
               
-              <div className="mt-8 text-center text-sm text-white/50 font-medium">
+              <div className="mt-6 flex flex-col gap-4">
+                <BorderGlow borderRadius={12} glowRadius={15} glowIntensity={1.5} edgeSensitivity={10} className="w-full">
+                  <Button 
+                    type="submit"
+                    disabled={isLoading}
+                    className="h-12 w-full text-[15px] font-bold text-white bg-gradient-to-r from-purple-600 to-fuchsia-500 hover:from-purple-500 hover:to-fuchsia-400 transition-all rounded-xl border-none disabled:opacity-50 active:scale-[0.98]"
+                    style={{
+                      boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.4), inset 0 -3px 6px rgba(0,0,0,0.6), 0 0 20px rgba(212,166,255,0.4)',
+                      borderTop: '1px solid rgba(255,255,255,0.3)',
+                      borderBottom: '2px solid rgba(0,0,0,0.8)',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.8)'
+                    }}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Signing in...
+                      </>
+                    ) : (
+                      'Sign In'
+                    )}
+                  </Button>
+                </BorderGlow>
+              </div>
+              
+              <div className="mt-8 text-center text-sm text-purple-200/50 font-medium">
                 Don't have an account?{' '}
-                <Link to="/signup" className="text-white hover:text-purple-300 transition-colors ml-1">
+                <Link to="/signup" className="text-purple-400 hover:text-purple-300 font-bold ml-1 relative after:absolute after:bottom-0 after:left-0 after:w-full after:h-px after:bg-purple-400/50 hover:after:bg-purple-300/100 after:transition-colors">
                   Create one
                 </Link>
               </div>
             </form>
           </CardContent>
         </Card>
-      </div>
+      </BorderGlow>
 
     </div>
   );

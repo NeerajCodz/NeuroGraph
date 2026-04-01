@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import BorderGlow from '@/components/BorderGlow';
+import BorderGlow from '@/components/reactbits/BorderGlow';
 import { MessageSquare, Terminal, Webhook, Bot, Server, Activity, Brain, Layers, Globe, Download, ShieldAlert, Bell, Network, Database, Container } from 'lucide-react';
 
 const FlowNode = ({ icon: Icon, title, subtitle, popup, delay = 0, colorClass = "from-purple-500/20 to-purple-500/0", borderClass = "border-purple-500/30" }: { icon: React.ComponentType<{ className?: string }>, title: string, subtitle: string, popup: string, delay?: number, colorClass?: string, borderClass?: string }) => (

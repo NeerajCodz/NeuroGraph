@@ -41,6 +41,21 @@ Results:
 - `go build ./cmd/neurograph` passed
 - command tree rendered correctly in help output
 
+Build-script validation:
+
+```powershell
+Set-Location E:\codz\Projects\NeuroGraph\cli
+.\builds\build.ps1 -Target current
+```
+
+Artifacts are written to:
+
+- `cli/build/output/`
+
+PowerShell build script validation was executed successfully in this environment.
+
+Shell script parsing/flow validation was executed. Full shell build execution in this environment depends on Go being installed in WSL (`go` was not available in WSL during this run).
+
 ## 3. Environment-specific issue for full test sweep
 
 In this environment, full package execution of `go test ./...` is blocked by OS Application Control when executing generated test binaries for `internal/config`:
@@ -66,6 +81,18 @@ Optional smoke tests:
 .\neurograph.exe --help
 .\neurograph.exe status
 .\neurograph.exe config show
+```
+
+Scripted artifact builds:
+
+```powershell
+.\builds\build.ps1 -Target current
+.\builds\build.ps1 -Target all
+```
+
+```bash
+sh ./builds/build.sh current
+sh ./builds/build.sh all
 ```
 
 If backend is running:

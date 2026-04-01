@@ -17,13 +17,49 @@ logger = get_logger(__name__)
 
 # Available NVIDIA models with their configurations
 NVIDIA_MODELS = {
-    # Reasoning models
+    # Reasoning models (with thinking/reasoning traces)
+    "qwen3-235b": {
+        "id": "qwen/qwen3-235b-a22b",
+        "max_tokens": 16384,
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "supports_reasoning": True,
+        "is_reasoning_agent": True,
+        "extra_body": {"chat_template_kwargs": {"enable_thinking": True}},
+    },
+    "qwen3-32b": {
+        "id": "qwen/qwen3-32b",
+        "max_tokens": 16384,
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "supports_reasoning": True,
+        "is_reasoning_agent": True,
+        "extra_body": {"chat_template_kwargs": {"enable_thinking": True}},
+    },
+    "qwen2.5-72b": {
+        "id": "qwen/qwen2.5-72b-instruct",
+        "max_tokens": 8192,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "supports_reasoning": True,
+        "is_reasoning_agent": True,
+    },
+    "qwq-32b": {
+        "id": "qwen/qwq-32b",
+        "max_tokens": 16384,
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "supports_reasoning": True,
+        "is_reasoning_agent": True,
+        "extra_body": {"chat_template_kwargs": {"enable_thinking": True}},
+    },
     "step-3.5-flash": {
         "id": "stepfun-ai/step-3.5-flash",
         "max_tokens": 16384,
         "temperature": 1.0,
         "top_p": 0.9,
         "supports_reasoning": True,
+        "is_reasoning_agent": True,
     },
     "glm4.7": {
         "id": "z-ai/glm4.7",
@@ -31,6 +67,7 @@ NVIDIA_MODELS = {
         "temperature": 1.0,
         "top_p": 1.0,
         "supports_reasoning": True,
+        "is_reasoning_agent": True,
         "extra_body": {"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}},
     },
     "deepseek-v3.2": {
@@ -39,14 +76,14 @@ NVIDIA_MODELS = {
         "temperature": 1.0,
         "top_p": 0.95,
         "supports_reasoning": True,
+        "is_reasoning_agent": True,
         "extra_body": {"chat_template_kwargs": {"thinking": True}},
     },
-    # Nemotron reasoning models
-    "nemotron-reasoning-4b": {
-        "id": "nvidia/nemotron-content-safety-reasoning-4b",
-        "max_tokens": 2048,
-        "temperature": 0.0,
-        "top_p": 1.0,
+    "deepseek-r1": {
+        "id": "deepseek-ai/deepseek-r1",
+        "max_tokens": 16384,
+        "temperature": 0.6,
+        "top_p": 0.95,
         "supports_reasoning": True,
         "is_reasoning_agent": True,
     },
@@ -294,9 +331,10 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
         graph_paths: list[dict],
         api_key: str | None = None,
         enable_thinking: bool = True,
+        reasoning_model: str = "qwen3-32b",
     ) -> dict:
         """
-        Use Nemotron reasoning model to analyze memory nodes and graph paths.
+        Use reasoning model to analyze memory nodes and graph paths.
         
         Args:
             query: User's original query
@@ -304,9 +342,10 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
             graph_paths: List of graph paths with source, relationship, target, reason
             api_key: Optional API key override
             enable_thinking: Whether to use /think mode for explicit reasoning traces
+            reasoning_model: Which reasoning model to use (qwen3-32b, qwq-32b, deepseek-r1, etc.)
             
         Returns:
-            dict with 'reasoning', 'synthesized_context', 'confidence', 'cited_nodes'
+            dict with 'reasoning', 'synthesized_context', 'confidence', 'cited_nodes', 'model_used'
         """
         client = self._build_client(api_key)
         if client is None:
@@ -372,29 +411,46 @@ OUTPUT FORMAT:
         try:
             await self._rate_limit_delay()
             
-            # Use Nemotron reasoning model or fallback to llama
-            model_key = "nemotron-reasoning-4b"
+            # Use the specified reasoning model
+            model_key = reasoning_model
             model_config = NVIDIA_MODELS.get(model_key)
             
             if not model_config:
-                # Fallback to llama-3.3-70b if reasoning model not available
-                model_key = "llama-3.3-70b"
-                model_config = NVIDIA_MODELS.get(model_key, {
-                    "id": "meta/llama-3.3-70b-instruct",
-                    "max_tokens": 4096,
-                    "temperature": 0.3,
-                    "top_p": 0.9,
-                })
+                # Fallback chain: try qwen3-32b, then llama-3.3-70b
+                fallback_models = ["qwen3-32b", "qwq-32b", "deepseek-r1", "llama-3.3-70b"]
+                for fallback in fallback_models:
+                    model_config = NVIDIA_MODELS.get(fallback)
+                    if model_config:
+                        model_key = fallback
+                        logger.warning("reasoning_model_fallback", requested=reasoning_model, using=fallback)
+                        break
+                else:
+                    # Ultimate fallback with hardcoded config
+                    model_key = "llama-3.3-70b"
+                    model_config = {
+                        "id": "meta/llama-3.3-70b-instruct",
+                        "max_tokens": 4096,
+                        "temperature": 0.3,
+                        "top_p": 0.9,
+                    }
             
             messages = [{"role": "user", "content": reasoning_prompt}]
             
-            response = await client.chat.completions.create(
-                model=model_config["id"],
-                messages=messages,
-                temperature=model_config.get("temperature", 0.0),
-                top_p=model_config.get("top_p", 1.0),
-                max_tokens=model_config.get("max_tokens", 2048),
-            )
+            # Add timeout to prevent hanging on slow reasoning models
+            try:
+                response = await asyncio.wait_for(
+                    client.chat.completions.create(
+                        model=model_config["id"],
+                        messages=messages,
+                        temperature=model_config.get("temperature", 0.0),
+                        top_p=model_config.get("top_p", 1.0),
+                        max_tokens=model_config.get("max_tokens", 2048),
+                    ),
+                    timeout=45.0  # 45 second timeout for reasoning
+                )
+            except asyncio.TimeoutError:
+                logger.warning("reasoning_agent_timeout", model=model_key, timeout_s=45)
+                return self._fallback_reasoning(query, memory_nodes, graph_paths)
             
             result_text = response.choices[0].message.content or ""
             
@@ -406,12 +462,16 @@ OUTPUT FORMAT:
                 output_length=len(result_text),
             )
             
-            # Parse the response
-            return self._parse_reasoning_response(result_text, memory_nodes)
+            # Parse the response and add model_used
+            parsed = self._parse_reasoning_response(result_text, memory_nodes)
+            parsed["model_used"] = model_key
+            return parsed
             
         except Exception as e:
             logger.warning("reasoning_agent_error", error=str(e))
-            return self._fallback_reasoning(query, memory_nodes, graph_paths)
+            fallback = self._fallback_reasoning(query, memory_nodes, graph_paths)
+            fallback["model_used"] = "fallback"
+            return fallback
     
     def _parse_reasoning_response(self, response: str, memory_nodes: list[dict]) -> dict:
         """Parse the structured reasoning response."""

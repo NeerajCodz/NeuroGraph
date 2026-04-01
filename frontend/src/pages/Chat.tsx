@@ -1,10 +1,12 @@
 import { ShinyText } from '@/components/reactbits/ShinyText';
-import { Bot, BrainCircuit, Activity, Settings2, Loader2, ChevronDown, ChevronUp, Cpu, Brain, Zap, Send } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { 
+  Bot, Loader2, ChevronDown, ChevronUp, Cpu, Brain, Zap, Send, Database, Globe,
+  Search, Link2, Sparkles, AlertTriangle, CheckCircle, Circle, ArrowRight, Network
+} from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { chatApi, modelsApi, profileApi } from '@/services/api';
 import type { StreamingStep, StreamingResponse } from '@/services/api';
 import { workspaceApi } from '@/services/api';
-import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -14,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Markdown } from '@/components/ui/markdown';
 import { useLocation, useParams } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
@@ -85,6 +88,11 @@ function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
   const [expanded, setExpanded] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
   
+  // Guard against non-array steps
+  if (!steps || !Array.isArray(steps) || steps.length === 0) {
+    return null;
+  }
+  
   const toggleStep = (stepNum: number) => {
     setExpandedSteps(prev => {
       const next = new Set(prev);
@@ -95,15 +103,35 @@ function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
   };
   
   const getStepIcon = (action: string) => {
-    if (action.toLowerCase().includes('rag') || action.toLowerCase().includes('memory')) return '🧠';
-    if (action.toLowerCase().includes('graph')) return '🔗';
-    if (action.toLowerCase().includes('web') || action.toLowerCase().includes('search')) return '🌐';
-    if (action.toLowerCase().includes('response') || action.toLowerCase().includes('generat')) return '✨';
-    return '⚡';
+    const actionLower = action.toLowerCase();
+    if (actionLower.includes('rag') || actionLower.includes('fetching')) 
+      return <Database className="w-3 h-3" />;
+    if (actionLower.includes('connected')) 
+      return <Link2 className="w-3 h-3" />;
+    if (actionLower.includes('graph')) 
+      return <Network className="w-3 h-3" />;
+    if (actionLower.includes('web') || actionLower.includes('surfing')) 
+      return <Globe className="w-3 h-3" />;
+    if (actionLower.includes('reasoning')) 
+      return <Brain className="w-3 h-3" />;
+    if (actionLower.includes('response') || actionLower.includes('generat')) 
+      return <Sparkles className="w-3 h-3" />;
+    return <Zap className="w-3 h-3" />;
+  };
+  
+  const getDetailIcon = (type: string) => {
+    switch (type) {
+      case 'connection': return <ArrowRight className="w-3 h-3 shrink-0" />;
+      case 'node': return <Circle className="w-3 h-3 shrink-0 fill-current" />;
+      case 'search': return <Search className="w-3 h-3 shrink-0" />;
+      case 'error': return <AlertTriangle className="w-3 h-3 shrink-0" />;
+      case 'result': return <CheckCircle className="w-3 h-3 shrink-0" />;
+      default: return <Circle className="w-2 h-2 shrink-0" />;
+    }
   };
   
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+    <div className="rounded-xl border border-white/10 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/5 transition-colors text-left"
@@ -126,7 +154,7 @@ function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
                 onClick={() => toggleStep(step.step_number)}
                 className="w-full flex items-center gap-2 text-xs text-left hover:bg-white/5 rounded-lg p-1.5 -ml-1.5 transition-colors"
               >
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] ${
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
                   step.status === 'completed' ? 'bg-green-500/20 text-green-400' :
                   step.status === 'failed' ? 'bg-red-500/20 text-red-400' :
                   'bg-white/10 text-white/40'
@@ -149,7 +177,7 @@ function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
                     <p className="text-purple-300/70"><span className="text-white/40">Reasoning:</span> {step.reasoning}</p>
                   )}
                   {step.details && step.details.map((detail, idx) => (
-                    <div key={idx} className={`flex gap-2 ${
+                    <div key={idx} className={`flex items-center gap-2 ${
                       detail.type === 'connection' ? 'text-cyan-300/70' :
                       detail.type === 'node' ? 'text-green-300/70' :
                       detail.type === 'search' ? 'text-yellow-300/70' :
@@ -157,13 +185,7 @@ function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
                       detail.type === 'result' ? 'text-purple-300/70' :
                       'text-white/50'
                     }`}>
-                      <span className="shrink-0">
-                        {detail.type === 'connection' ? '→' :
-                         detail.type === 'node' ? '◉' :
-                         detail.type === 'search' ? '🔍' :
-                         detail.type === 'error' ? '⚠' :
-                         detail.type === 'result' ? '✓' : '•'}
-                      </span>
+                      {getDetailIcon(detail.type)}
                       <span>{detail.content}</span>
                     </div>
                   ))}
@@ -183,16 +205,13 @@ function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
 export default function Chat() {
   const location = useLocation();
   const { conversationId: routeConversationId } = useParams<{ conversationId: string }>();
-  const { compactMode, showConfidence, showReasoning } = useTheme();
-  const [isOrchestratorOpen, setIsOrchestratorOpen] = useState(false);
+  const { compactMode, showReasoning } = useTheme();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [currentReasoning, setCurrentReasoning] = useState<ReasoningStep[] | null>(null);
-  const [currentSources, setCurrentSources] = useState<MemorySource[] | null>(null);
   const [error, setError] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Model selection
@@ -206,6 +225,25 @@ export default function Chat() {
   const [includeGlobal] = useState(true);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Array<{ id: string; name: string }>>([]);
+  
+  // Reasoning model selection
+  const [selectedReasoningModel, setSelectedReasoningModel] = useState('qwen3-32b');
+  const reasoningEnabled = selectedReasoningModel !== 'none';
+  const [reasoningModels, setReasoningModels] = useState<Array<{ key: string; id: string; supports_thinking: boolean }>>([]);
+  const sessionSources = useMemo(() => {
+    const seen = new Set<string>();
+    const out: MemorySource[] = [];
+    for (const msg of messages) {
+      if (msg.role !== 'assistant' || !msg.sources?.length) continue;
+      for (const source of msg.sources) {
+        const key = `${source.node_id ?? ''}|${source.layer}|${source.content}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(source);
+      }
+    }
+    return out;
+  }, [messages]);
   
   // Processing status
   
@@ -226,7 +264,29 @@ export default function Chat() {
         console.error('Failed to load models:', err);
       }
     };
+    
+    const loadReasoningModels = async () => {
+      try {
+        const result = await modelsApi.getReasoningModels() as { 
+          reasoning_models: Array<{ key: string; id: string; supports_thinking: boolean }>;
+          default: string;
+        };
+        setReasoningModels(result.reasoning_models || []);
+        
+        // Load saved reasoning model preference
+        const savedReasoningModel = localStorage.getItem('ng_reasoning_model');
+        if (savedReasoningModel) {
+          setSelectedReasoningModel(savedReasoningModel);
+        } else if (result.default) {
+          setSelectedReasoningModel(result.default);
+        }
+      } catch (err) {
+        console.error('Failed to load reasoning models:', err);
+      }
+    };
+    
     loadModels();
+    loadReasoningModels();
   }, []);
 
   useEffect(() => {
@@ -237,6 +297,7 @@ export default function Chat() {
         const preferredModel = profile.settings.default_model;
         const preferredLayer = profile.settings.default_memory_layer;
         const preferredAgentsEnabled = profile.settings.agents_enabled;
+        const preferredReasoningModel = profile.settings.reasoning_model;
 
         if (preferredProvider) {
           setSelectedProvider(preferredProvider);
@@ -252,6 +313,10 @@ export default function Chat() {
         } else if (preferredLayer === 'personal' || preferredLayer === 'global') {
           setMemoryLayer(preferredLayer);
           localStorage.setItem('ng_default_layer', preferredLayer);
+        }
+        if (preferredReasoningModel) {
+          setSelectedReasoningModel(preferredReasoningModel);
+          localStorage.setItem('ng_reasoning_model', preferredReasoningModel);
         }
         setAgentsEnabled(Boolean(preferredAgentsEnabled));
       } catch {
@@ -277,20 +342,29 @@ export default function Chat() {
     loadWorkspaces();
   }, [selectedWorkspace]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scrollToBottom = useCallback(() => {
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
   // Save model preferences
   useEffect(() => {
     localStorage.setItem('ng_default_provider', selectedProvider);
     localStorage.setItem('ng_default_model', selectedModel);
   }, [selectedProvider, selectedModel]);
-
+  
+  // Save reasoning model preference
+  useEffect(() => {
+    localStorage.setItem('ng_reasoning_model', selectedReasoningModel);
+  }, [selectedReasoningModel]);
+  
   const [processingState, setProcessingState] = useState<{
     isProcessing: boolean;
     currentAction: string;
@@ -358,13 +432,27 @@ export default function Chat() {
   }, [routeConversationId]);
 
   useEffect(() => {
+    // Keep window scroll pinned so the chat viewport doesn't drift and reveal page background.
+    const resetWindowScroll = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+    resetWindowScroll();
+    const rafId = requestAnimationFrame(resetWindowScroll);
+    const timeoutId = window.setTimeout(resetWindowScroll, 120);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [routeConversationId]);
+
+  useEffect(() => {
     const onNewChat = (event: Event) => {
       const detail = (event as CustomEvent<{ workspaceId?: string | null }>).detail;
       const workspaceId = detail?.workspaceId ?? null;
       setMessages([]);
       setConversationId(null);
-      setCurrentReasoning(null);
-      setCurrentSources(null);
       setProcessingState({ isProcessing: false, currentAction: '', steps: [], expanded: false });
       if (workspaceId) {
         setSelectedWorkspace(workspaceId);
@@ -394,8 +482,6 @@ export default function Chat() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setError('');
-    setCurrentReasoning(null);
-    setCurrentSources(null);
 
     // Initialize processing state with pending steps
     const initialSteps: ProcessingStep[] = [
@@ -444,6 +530,8 @@ export default function Chat() {
       selectedModel,
       agentsEnabled,
       selectedWorkspace || undefined,
+      reasoningEnabled ? selectedReasoningModel : undefined,
+      reasoningEnabled,
       // onStep: Real-time step updates from backend
       (step: StreamingStep) => {
         setProcessingState(prev => {
@@ -482,7 +570,6 @@ export default function Chat() {
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
-        setCurrentSources(response.sources || null);
         
         // Complete processing
         setProcessingState(prev => ({ 
@@ -516,73 +603,19 @@ export default function Chat() {
     );
 
     streamAbortRef.current = streamController;
-  }, [isLoading, conversationId, memoryLayer, includeGlobal, selectedProvider, selectedModel, agentsEnabled, selectedWorkspace]);
+  }, [isLoading, conversationId, memoryLayer, includeGlobal, selectedProvider, selectedModel, agentsEnabled, selectedWorkspace, reasoningEnabled, selectedReasoningModel]);
 
   const getAvailableModels = () => {
     const provider = providers.find(p => p.id === selectedProvider);
     return provider?.models || [];
   };
 
-  const startNewChat = () => {
-    setMessages([]);
-    setConversationId(null);
-    setCurrentReasoning(null);
-    setCurrentSources(null);
-    setProcessingState({ isProcessing: false, currentAction: '', steps: [], expanded: false });
-  };
-
   return (
-    <div className="h-full flex flex-col">
-      <section className="flex flex-1 min-h-0 w-full max-w-4xl mx-auto flex-col">
-        {/* Top Bar */}
-        <div className={cn('flex justify-between items-center px-4 md:px-6 shrink-0 gap-3 border-b border-white/5', compactMode ? 'py-2' : 'py-3')}>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={startNewChat}
-              className="border-white/10 text-white/70 hover:bg-white/10"
-            >
-              + New Chat
-            </Button>
-            <Select
-              value={selectedWorkspace || 'none'}
-              onValueChange={(v) => {
-                if (v === 'none') {
-                  setSelectedWorkspace(null);
-                  return;
-                }
-                setSelectedWorkspace(v);
-                startNewChat();
-              }}
-            >
-              <SelectTrigger className="h-9 w-52 rounded-xl border-white/10 bg-white/5 text-white/80">
-                <SelectValue placeholder="Workspace" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#0a0520] border-white/10 z-[100]">
-                <SelectItem value="none" className="text-white/70">No workspace</SelectItem>
-                {workspaces.map((ws) => (
-                  <SelectItem key={ws.id} value={ws.id} className="text-white">
-                    {ws.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {showReasoning ? (
-            <button
-              onClick={() => setIsOrchestratorOpen((prev) => !prev)}
-              className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <Settings2 className="size-3.5" />
-              Orchestrator
-            </button>
-          ) : null}
-        </div>
-
-        {/* Messages Area - Takes full remaining height */}
-        <div className={cn('flex-1 min-h-0 overflow-y-auto px-4 md:px-6', compactMode ? 'py-2.5' : 'py-4')}>
-          <div className={cn('max-w-3xl mx-auto', compactMode ? 'space-y-4' : 'space-y-6')}>
+    <div className="flex h-full min-h-0 w-full overflow-hidden">
+      <section className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Messages Area */}
+        <div ref={messagesScrollRef} className={cn('flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 md:px-6', compactMode ? 'py-2.5 pb-28' : 'py-4 pb-32')}>
+          <div className={cn('mx-auto w-full max-w-5xl', compactMode ? 'space-y-4' : 'space-y-6')}>
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
                 <div className="mb-6 p-5 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30">
@@ -627,12 +660,12 @@ export default function Chat() {
                           )}
                           
                           {/* Response */}
-                          <div className="text-[15px] leading-7 text-white/90">
-                            {message.content}
+                          <div className="text-[15px] leading-7">
+                            <Markdown content={message.content} />
                           </div>
                           
                           {/* Metadata */}
-                          {showConfidence && message.confidence && (
+                          {message.confidence && (
                             <div className="text-xs text-white/40">
                               Confidence: {(message.confidence * 100).toFixed(0)}%
                               {message.sources && message.sources.length > 0 && (
@@ -751,7 +784,6 @@ export default function Chat() {
                 )}
               </>
             )}
-            <div ref={messagesEndRef} />
           </div>
         </div>
 
@@ -763,8 +795,8 @@ export default function Chat() {
         )}
 
         {/* Input Area */}
-        <div className={cn('shrink-0 px-4 md:px-6 border-t border-white/5', compactMode ? 'pb-3 pt-2' : 'pb-4 pt-3')}>
-          <div className="max-w-3xl mx-auto">
+        <div className={cn('absolute inset-x-0 bottom-0 z-10 px-4 md:px-6 border-t border-white/10 bg-[#090512]/95 backdrop-blur-md', compactMode ? 'pb-3 pt-2' : 'pb-4 pt-3')}>
+          <div className="mx-auto w-full max-w-5xl">
             <div className="relative">
               <textarea
                 ref={inputRef}
@@ -843,38 +875,6 @@ export default function Chat() {
                 </Select>
               </div>
 
-              <div className="h-4 w-px bg-white/10"></div>
-              
-              {/* Memory Layer */}
-              <Select
-                value={memoryLayer}
-                onValueChange={(v) => {
-                  const nextLayer = v as 'personal' | 'workspace' | 'global';
-                  setMemoryLayer(nextLayer);
-                  if (nextLayer !== 'workspace') {
-                    setSelectedWorkspace(null);
-                  } else if (!selectedWorkspace && workspaces.length > 0) {
-                    setSelectedWorkspace(workspaces[0].id);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-32 h-8 text-xs bg-white/5 border-white/10 text-white/70 hover:text-white rounded-lg">
-                  <Brain className="w-3 h-3 mr-1" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0a0520] border-white/10 z-[100]">        
-                  <SelectItem value="personal" className="text-white text-xs">  
-                    <span className="flex items-center gap-2">Personal</span>
-                  </SelectItem>
-                  <SelectItem value="workspace" className="text-white text-xs"> 
-                    <span className="flex items-center gap-2">Workspace</span>
-                  </SelectItem>
-                  <SelectItem value="global" className="text-white text-xs">    
-                    <span className="flex items-center gap-2">Global</span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              
               <div className="h-4 w-px bg-white/10 ml-auto"></div>
 
               {/* Agents Toggle */}
@@ -890,6 +890,30 @@ export default function Chat() {
                   className="data-[state=checked]:bg-purple-500 scale-75"
                 />
               </div>
+
+              {/* Reasoning Model */}
+              {reasoningModels.length > 0 && (
+                <Select value={selectedReasoningModel} onValueChange={setSelectedReasoningModel}>
+                  <SelectTrigger className="h-7 w-32 text-xs bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-200 hover:text-white rounded-lg">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0a0520] border-fuchsia-500/20 z-[100]">
+                    <SelectItem value="none" className="text-white/70 text-xs">
+                      None
+                    </SelectItem>
+                    {reasoningModels.map((m) => (
+                      <SelectItem key={m.key} value={m.key} className="text-white text-xs">
+                        <span className="flex items-center gap-1.5">
+                          {m.key}
+                          {m.supports_thinking && (
+                            <span className="text-[8px] text-fuchsia-400 bg-fuchsia-500/20 px-1 rounded">think</span>
+                          )}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
           
@@ -899,108 +923,65 @@ export default function Chat() {
         </div>
       </section>
 
-      {/* Orchestrator Panel */}
-      {showReasoning && isOrchestratorOpen && (
-        <aside className="absolute right-0 top-0 bottom-0 z-10 w-80 border-l border-white/10 bg-[#090512]/95 backdrop-blur-md shadow-2xl">
-          <div className="absolute inset-0 flex flex-col">
-            <div className="flex items-center justify-between border-b border-white/10 p-4">
-              <div>
-                <h3 className="text-sm font-semibold text-white">Live Session Panel</h3>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-purple-200/60">Orchestrator</p>
+      <aside className="hidden h-full w-80 shrink-0 border-l border-white/10 bg-[#090512]/92 backdrop-blur-md lg:flex lg:flex-col">
+        <div className="border-b border-white/10 p-4">
+          <h3 className="text-sm font-semibold text-white">Session Memories</h3>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-purple-200/60">Accessed in current chat</p>
+        </div>
+
+        <div className="border-b border-white/10 p-4">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">Memory Layer</p>
+          <Select
+            value={memoryLayer}
+            onValueChange={(v) => {
+              const nextLayer = v as 'personal' | 'workspace' | 'global';
+              setMemoryLayer(nextLayer);
+              if (nextLayer !== 'workspace') {
+                setSelectedWorkspace(null);
+              } else if (!selectedWorkspace && workspaces.length > 0) {
+                setSelectedWorkspace(workspaces[0].id);
+              }
+            }}
+          >
+            <SelectTrigger className="h-8 w-full rounded-lg border-white/10 bg-white/5 text-xs text-white/80">
+              <Brain className="mr-1 h-3 w-3" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="z-[100] border-white/10 bg-[#0a0520]">
+              <SelectItem value="personal" className="text-xs text-white">Personal</SelectItem>
+              <SelectItem value="workspace" className="text-xs text-white">Workspace</SelectItem>
+              <SelectItem value="global" className="text-xs text-white">Global</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="scrollbar-thin flex-1 space-y-2 overflow-y-auto p-4">
+          {sessionSources.length > 0 ? (
+            sessionSources.map((source, idx) => (
+              <div key={`${source.node_id ?? idx}-${idx}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="line-clamp-3 text-xs leading-relaxed text-white/80">{source.content}</p>
+                <div className="mt-2 flex items-center justify-between text-[10px] text-white/45">
+                  <span className="inline-flex items-center gap-1">
+                    <Database className="h-3 w-3" />
+                    {source.layer}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Globe className="h-3 w-3" />
+                    {(source.score * 100).toFixed(0)}%
+                  </span>
+                </div>
+                {source.node_id ? (
+                  <p className="mt-1 truncate text-[10px] text-white/35">{source.node_id}</p>
+                ) : null}
               </div>
-              <button
-                onClick={() => setIsOrchestratorOpen(false)}
-                className="rounded-lg p-2 text-white/50 hover:bg-white/10 hover:text-white"
-              >
-                ✕
-              </button>
+            ))
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/50">
+              No memories accessed yet in this session.
             </div>
-
-            <div className="scrollbar-thin flex-1 space-y-6 overflow-y-auto p-4 md:p-5">
-              {/* Session Stats */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">Session Pulse</p>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm text-white/80">
-                    <span className="flex items-center gap-2"><BrainCircuit className="size-4 text-purple-400" />Messages</span>
-                    <strong className="text-purple-200">{messages.length}</strong>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-white/80">
-                    <span className="flex items-center gap-2"><Bot className="size-4 text-indigo-400" />Sources Used</span>
-                    <strong className="text-indigo-200">{currentSources?.length || 0}</strong>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-white/80">
-                    <span className="flex items-center gap-2"><Activity className="size-4 text-fuchsia-400" />Reasoning Steps</span>
-                    <strong className="text-fuchsia-200">{currentReasoning?.length || 0}</strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Current Model */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">Current Model</p>
-                <div className="flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-cyan-400" />
-                  <span className="text-sm text-white">{selectedProvider}</span>
-                  <span className="text-white/30">/</span>
-                  <span className="text-sm text-cyan-200">{selectedModel}</span>
-                </div>
-              </div>
-
-              {/* Sources */}
-              {currentSources && currentSources.length > 0 && (
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-200/50">Memory Sources</p>
-                  <div className="space-y-2">
-                    {currentSources.map((source, i) => (
-                      <div key={i} className="text-xs text-white/70 bg-black/20 rounded-lg p-2">
-                        <p className="line-clamp-2">{source.content}</p>
-                        <div className="flex justify-between mt-1 text-white/40">
-                          <span>{source.layer}</span>
-                          <span>{(source.score * 100).toFixed(0)}%</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Reasoning */}
-              {currentReasoning && currentReasoning.length > 0 && (
-                <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-4">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-purple-200/50">Reasoning Stream</p>
-                  <div className="space-y-2">
-                    {currentReasoning.map((step, i) => (
-                      <div key={i} className="text-xs">
-                        <div className="flex items-center gap-2 text-purple-200">
-                          <span className="font-mono text-purple-400">{step.step}.</span>
-                          <span className="font-medium">{step.action}</span>
-                        </div>
-                        <p className="text-white/50 mt-1 pl-5">{step.result}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Empty State */}
-              {!currentSources && !currentReasoning && (
-                <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-4">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-purple-200/50">Reasoning Stream</p>
-                  <ShinyText
-                    text="Waiting for query..."
-                    speed={4}
-                    className="mb-2 text-sm font-medium text-purple-100"
-                  />
-                  <p className="text-xs leading-relaxed text-white/60">
-                    Send a message to see the reasoning process and memory sources used.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </aside>
-      )}
+          )}
+        </div>
+      </aside>
     </div>
   );
 }

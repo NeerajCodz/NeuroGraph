@@ -102,6 +102,14 @@
     scroll-behavior: smooth;
   }
 
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100dvh;
+    height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: "Geist Variable", "Segoe UI", system-ui, sans-serif;
@@ -154,7 +162,7 @@
 
 @layer utilities {
   .app-shell {
-    @apply relative isolate h-full w-full overflow-hidden;
+    @apply relative isolate h-dvh min-h-dvh w-full overflow-hidden;
   }
 
   .app-shell::before,

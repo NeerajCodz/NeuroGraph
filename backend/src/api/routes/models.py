@@ -77,12 +77,54 @@ async def list_gemini_models(current_user = Depends(get_current_user)):
 @router.get("/nvidia")
 async def list_nvidia_models(current_user = Depends(get_current_user)):
     """List available NVIDIA models from build.nvidia.com."""
+    # Extract reasoning models (models with is_reasoning_agent=True)
+    reasoning_models = [
+        {
+            "key": key,
+            "id": config["id"],
+            "max_tokens": config.get("max_tokens", 4096),
+            "supports_thinking": "extra_body" in config and "chat_template_kwargs" in config.get("extra_body", {}),
+        }
+        for key, config in NVIDIA_MODELS.items()
+        if config.get("is_reasoning_agent", False)
+    ]
+    
     return {
         "provider": "nvidia",
         "models": get_available_nvidia_models(),
         "base_url": "https://integrate.api.nvidia.com/v1",
-        "reasoning_models": ["step-3.5-flash", "glm4.7", "deepseek-v3.2"],
+        "reasoning_models": reasoning_models,
         "code_models": ["devstral-2-123b"],
+    }
+
+
+@router.get("/reasoning")
+async def list_reasoning_models(current_user = Depends(get_current_user)):
+    """List available reasoning models for the reasoning agent step."""
+    reasoning_models = [
+        {
+            "key": key,
+            "id": config["id"],
+            "max_tokens": config.get("max_tokens", 4096),
+            "temperature": config.get("temperature", 0.6),
+            "supports_thinking": "extra_body" in config and "chat_template_kwargs" in config.get("extra_body", {}),
+            "provider": "nvidia",
+        }
+        for key, config in NVIDIA_MODELS.items()
+        if config.get("is_reasoning_agent", False)
+    ]
+    
+    # Sort by key for consistent ordering
+    reasoning_models.sort(key=lambda x: x["key"])
+    
+    return {
+        "reasoning_models": reasoning_models,
+        "default": "qwen3-32b",
+        "recommended": [
+            {"key": "qwen3-32b", "reason": "Balanced performance and speed"},
+            {"key": "qwq-32b", "reason": "Strong logical reasoning"},
+            {"key": "deepseek-r1", "reason": "Deep chain-of-thought reasoning"},
+        ],
     }
 
 

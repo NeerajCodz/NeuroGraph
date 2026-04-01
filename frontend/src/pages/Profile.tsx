@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Activity,
@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import BorderGlow from '@/components/reactbits/BorderGlow';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { modelsApi, profileApi, type ProfileSettingsResponse } from '@/services/api';
@@ -72,10 +73,36 @@ interface AppearanceState {
   showReasoning: boolean;
 }
 
-const cardClass =
-  'rounded-3xl border border-white/20 bg-white/10 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_20px_48px_-24px_rgba(0,0,0,0.65)]';
+const cardClass = 'rounded-3xl';
+const subCardClass =
+  'rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]';
+const rowCardClass =
+  'flex items-center justify-between rounded-2xl border border-white/10 bg-black/35 px-4 py-3 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]';
+const inputClass = 'mt-1.5 border-white/15 bg-black/35 text-white placeholder:text-white/45 backdrop-blur-xl';
+const selectContentClass = 'border-white/15 bg-[#06060b]/95 text-white backdrop-blur-2xl';
+const outlineButtonClass = 'border-white/18 bg-black/40 text-white backdrop-blur-xl hover:bg-black/55';
+const saveButtonClass =
+  'border border-white/15 bg-black/45 text-white backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_32px_-22px_rgba(0,0,0,0.9)] hover:bg-black/55';
 
-const inputClass = 'mt-1.5 bg-white/8 border-white/20 text-white placeholder:text-white/45';
+function CardSection({ children }: { children: ReactNode }) {
+  return (
+    <BorderGlow
+      className={cardClass}
+      edgeSensitivity={36}
+      glowColor="40 80 80"
+      backgroundColor="#06060b"
+      borderRadius={24}
+      glowRadius={20}
+      glowIntensity={0.4}
+      coneSpread={22}
+      animated={false}
+      fillOpacity={0.12}
+      colors={['#5227FF', '#B19EEF', '#FF9FFC']}
+    >
+      <section className="p-6">{children}</section>
+    </BorderGlow>
+  );
+}
 
 function SaveButton({ state, onClick, label = 'Save Changes' }: { state: SaveState; onClick: () => void; label?: string }) {
   return (
@@ -84,7 +111,7 @@ function SaveButton({ state, onClick, label = 'Save Changes' }: { state: SaveSta
       <Button
         onClick={onClick}
         disabled={state.isSaving}
-        className="bg-gradient-to-r from-purple-500/90 via-fuchsia-500/85 to-violet-500/90 text-white shadow-lg"
+        className={saveButtonClass}
       >
         {state.isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
         {!state.isSaving && state.isSaved ? <Check className="mr-2 h-4 w-4" /> : null}
@@ -395,7 +422,7 @@ export default function Profile() {
 
   const renderProfile = () => (
     <div className="space-y-6">
-      <section className={`${cardClass} p-6`}>
+      <CardSection>
         <h2 className="mb-1 text-xl font-semibold text-white">Profile</h2>
         <p className="mb-5 text-sm text-white/65">Update your account details and identity.</p>
 
@@ -410,7 +437,7 @@ export default function Profile() {
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 rounded-2xl border border-white/15 bg-black/20 p-4 text-xs text-white/65 md:grid-cols-2">
+        <div className={`mt-5 grid gap-3 p-4 text-xs text-white/65 md:grid-cols-2 ${subCardClass}`}>
           <p>
             User ID: <span className="font-mono text-white/85">{user?.id || settingsSnapshot?.user.id}</span>
           </p>
@@ -418,7 +445,7 @@ export default function Profile() {
             Created: <span className="text-white/85">{new Date(user?.created_at || settingsSnapshot?.user.created_at || '').toLocaleString()}</span>
           </p>
         </div>
-      </section>
+      </CardSection>
 
       <SaveButton state={profileSave} onClick={saveProfile} />
     </div>
@@ -426,7 +453,7 @@ export default function Profile() {
 
   const renderAgents = () => (
     <div className="space-y-6">
-      <section className={`${cardClass} p-6`}>
+      <CardSection>
         <h2 className="mb-1 text-xl font-semibold text-white">Agents</h2>
         <p className="mb-5 text-sm text-white/65">Fine tune orchestration, memory and safety controls.</p>
 
@@ -484,7 +511,7 @@ export default function Profile() {
             const Icon = item.icon;
             const key = item.key as keyof AgentFlags;
             return (
-              <div key={item.key} className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+              <div key={item.key} className={rowCardClass}>
                 <div>
                   <p className="flex items-center gap-2 text-sm font-medium text-white">
                     <Icon className="h-4 w-4 text-purple-300" />
@@ -500,7 +527,7 @@ export default function Profile() {
             );
           })}
         </div>
-      </section>
+      </CardSection>
 
       <SaveButton state={agentsSave} onClick={saveAgents} />
     </div>
@@ -508,7 +535,7 @@ export default function Profile() {
 
   const renderModels = () => (
     <div className="space-y-6">
-      <section className={`${cardClass} p-6`}>
+      <CardSection>
         <h2 className="mb-1 text-xl font-semibold text-white">AI Models</h2>
         <p className="mb-5 text-sm text-white/65">Choose providers/models and optionally use your own API keys.</p>
 
@@ -519,7 +546,7 @@ export default function Profile() {
               <SelectTrigger className={inputClass}>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="border-white/20 bg-[#100828] text-white">
+              <SelectContent className={selectContentClass}>
                 {providers.map((provider) => (
                   <SelectItem key={provider.id} value={provider.id}>
                     {provider.name}
@@ -534,7 +561,7 @@ export default function Profile() {
               <SelectTrigger className={inputClass}>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="max-h-72 border-white/20 bg-[#100828] text-white">
+              <SelectContent className={`max-h-72 ${selectContentClass}`}>
                 {providerModels.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
                     {model.name}
@@ -552,7 +579,7 @@ export default function Profile() {
               <SelectTrigger className={inputClass}>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="border-white/20 bg-[#100828] text-white">
+              <SelectContent className={selectContentClass}>
                 <SelectItem value="personal">Personal</SelectItem>
                 <SelectItem value="workspace">Workspace</SelectItem>
                 <SelectItem value="global">Global</SelectItem>
@@ -560,20 +587,20 @@ export default function Profile() {
             </Select>
           </div>
         </div>
-      </section>
+      </CardSection>
 
-      <section className={`${cardClass} p-6`}>
+      <CardSection>
         <h3 className="mb-4 text-lg font-semibold text-white">Bring Your Own API Keys</h3>
         <div className="grid gap-4 md:grid-cols-3">
           {(['gemini', 'groq', 'nvidia'] as const).map((provider) => (
-            <div key={provider} className="rounded-2xl border border-white/15 bg-black/20 p-4">
+            <div key={provider} className={`p-4 ${subCardClass}`}>
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-medium capitalize text-white">{provider}</p>
                 <Badge
                   className={
                     settingsSnapshot?.settings.custom_provider_keys?.[provider]?.configured
                       ? 'border-emerald-400/30 bg-emerald-500/20 text-emerald-200'
-                      : 'border-white/20 bg-white/10 text-white/70'
+                      : 'border-white/15 bg-black/45 text-white/70'
                   }
                 >
                   {settingsSnapshot?.settings.custom_provider_keys?.[provider]?.configured ? 'Configured' : 'Not Set'}
@@ -599,7 +626,7 @@ export default function Profile() {
               <Button
                 variant="outline"
                 size="sm"
-                className="mt-3 w-full border-white/25 bg-white/10 text-white hover:bg-white/15"
+                className={`mt-3 w-full ${outlineButtonClass}`}
                 onClick={() => testProvider(provider)}
                 disabled={models.testingProvider === provider}
               >
@@ -614,13 +641,13 @@ export default function Profile() {
             </div>
           ))}
         </div>
-      </section>
+      </CardSection>
 
-      <section className={`${cardClass} p-6`}>
+      <CardSection>
         <h3 className="mb-4 text-lg font-semibold text-white">Available Providers</h3>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {providers.map((provider) => (
-            <div key={provider.id} className="rounded-2xl border border-white/15 bg-black/20 p-4">
+            <div key={provider.id} className={`p-4 ${subCardClass}`}>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-sm font-medium text-white">{provider.name}</p>
                 <Badge className={provider.is_available ? 'border-emerald-400/30 bg-emerald-500/20 text-emerald-200' : 'border-red-400/30 bg-red-500/20 text-red-200'}>
@@ -631,7 +658,7 @@ export default function Profile() {
             </div>
           ))}
         </div>
-      </section>
+      </CardSection>
 
       <SaveButton state={modelSave} onClick={saveModels} />
     </div>
@@ -639,12 +666,12 @@ export default function Profile() {
 
   const renderPreferences = () => (
     <div className="space-y-6">
-      <section className={`${cardClass} p-6`}>
+      <CardSection>
         <h2 className="mb-1 text-xl font-semibold text-white">Preferences</h2>
         <p className="mb-5 text-sm text-white/65">Theme, density and chat display preferences.</p>
 
         <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+          <div className={rowCardClass}>
             <div>
               <p className="flex items-center gap-2 text-sm font-medium text-white">
                 <SunMoon className="h-4 w-4 text-purple-300" />
@@ -656,10 +683,10 @@ export default function Profile() {
               value={appearance.theme}
               onValueChange={(value) => setAppearance((prev) => ({ ...prev, theme: value as 'dark' | 'light' | 'system' }))}
             >
-              <SelectTrigger className="h-8 w-32 bg-white/8 border-white/20 text-white">
+              <SelectTrigger className="h-8 w-32 border-white/15 bg-black/35 text-white backdrop-blur-xl">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="border-white/20 bg-[#100828] text-white">
+              <SelectContent className={selectContentClass}>
                 <SelectItem value="dark">Dark</SelectItem>
                 <SelectItem value="light">Light</SelectItem>
                 <SelectItem value="system">System</SelectItem>
@@ -667,7 +694,7 @@ export default function Profile() {
             </Select>
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+          <div className={rowCardClass}>
             <div>
               <p className="flex items-center gap-2 text-sm font-medium text-white">
                 <SlidersHorizontal className="h-4 w-4 text-purple-300" />
@@ -678,7 +705,7 @@ export default function Profile() {
             <Switch checked={appearance.compactMode} onCheckedChange={(value) => setAppearance((prev) => ({ ...prev, compactMode: value }))} />
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+          <div className={rowCardClass}>
             <div>
               <p className="text-sm font-medium text-white">Show Confidence Scores</p>
               <p className="text-xs text-white/55">Display model confidence on assistant responses.</p>
@@ -686,7 +713,7 @@ export default function Profile() {
             <Switch checked={appearance.showConfidence} onCheckedChange={(value) => setAppearance((prev) => ({ ...prev, showConfidence: value }))} />
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+          <div className={rowCardClass}>
             <div>
               <p className="text-sm font-medium text-white">Show Reasoning Stream</p>
               <p className="text-xs text-white/55">Show orchestrator steps and reasoning panel in chat.</p>
@@ -694,25 +721,25 @@ export default function Profile() {
             <Switch checked={appearance.showReasoning} onCheckedChange={(value) => setAppearance((prev) => ({ ...prev, showReasoning: value }))} />
           </div>
         </div>
-      </section>
+      </CardSection>
 
       <SaveButton state={appearanceSave} onClick={saveAppearance} />
     </div>
   );
 
   const renderIntegrations = () => (
-    <section className={`${cardClass} p-6`}>
+    <CardSection>
       <h2 className="mb-1 text-xl font-semibold text-white">Integrations</h2>
       <p className="text-sm text-white/65">As requested, this section is intentionally left non-functional for now.</p>
-      <div className="mt-4 rounded-2xl border border-white/15 bg-black/20 p-4 text-sm text-white/65">
+      <div className={`mt-4 p-4 text-sm text-white/65 ${subCardClass}`}>
         Integrations are excluded from this rollout.
       </div>
-    </section>
+    </CardSection>
   );
 
   const renderSecurity = () => (
     <div className="space-y-6">
-      <section className={`${cardClass} p-6`}>
+      <CardSection>
         <h2 className="mb-1 text-xl font-semibold text-white">Security</h2>
         <p className="mb-5 text-sm text-white/65">Update account password.</p>
 
@@ -730,7 +757,7 @@ export default function Profile() {
             <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} />
           </div>
         </div>
-      </section>
+      </CardSection>
 
       <SaveButton state={securitySave} onClick={saveSecurity} label="Update Password" />
     </div>
@@ -738,12 +765,12 @@ export default function Profile() {
 
   const renderSettings = () => (
     <div className="space-y-6">
-      <section className={`${cardClass} p-6`}>
+      <CardSection>
         <h2 className="mb-1 text-xl font-semibold text-white">Advanced Settings</h2>
         <p className="mb-5 text-sm text-white/65">Workspace-wide controls, export and sidebar behavior.</p>
 
         <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+          <div className={rowCardClass}>
             <div>
               <p className="text-sm font-medium text-white">Analytics</p>
               <p className="text-xs text-white/55">Share anonymous performance diagnostics.</p>
@@ -751,7 +778,7 @@ export default function Profile() {
             <Switch checked={analyticsEnabled} onCheckedChange={setAnalyticsEnabled} />
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+          <div className={rowCardClass}>
             <div>
               <p className="text-sm font-medium text-white">Collapse Sidebar by Default</p>
               <p className="text-xs text-white/55">Applies to all authenticated pages including profile/settings.</p>
@@ -759,14 +786,14 @@ export default function Profile() {
             <Switch checked={sidebarCollapsed} onCheckedChange={setSidebarCollapsed} />
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+          <div className={rowCardClass}>
             <div>
               <p className="text-sm font-medium text-white">Export Data</p>
               <p className="text-xs text-white/55">Download profile, settings, conversations, messages, and memories.</p>
             </div>
             <Button
               variant="outline"
-              className="border-white/25 bg-white/10 text-white hover:bg-white/15"
+              className={outlineButtonClass}
               onClick={exportData}
               disabled={exporting}
             >
@@ -775,7 +802,7 @@ export default function Profile() {
             </Button>
           </div>
         </div>
-      </section>
+      </CardSection>
 
       <SaveButton state={settingsSave} onClick={saveGeneralSettings} />
     </div>

@@ -27,6 +27,16 @@ frontend/node_modules/
 coverage/
 .cache/
 
+# --- CLI binaries and build artifacts ---
+/cli/build/output/
+/cli/neurograph
+/cli/neurograph.exe
+/cli/*.exe
+/cli/*.out
+/cli/config.test.exe
+/cli/*.test
+/cli/.gotmp/
+
 # --- Frontend artifacts ---
 frontend/dist/
 frontend/dist-ssr/

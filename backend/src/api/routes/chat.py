@@ -26,6 +26,8 @@ class ChatMessage(BaseModel):
     agents_enabled: bool | None = None
     provider: str | None = Field(default=None, description="LLM provider: gemini, nvidia, groq")
     model: str | None = Field(default=None, description="Model ID to use")
+    reasoning_model: str | None = Field(default=None, description="Reasoning model to use (qwen3-32b, deepseek-r1, etc)")
+    reasoning_enabled: bool | None = Field(default=None, description="Whether to use reasoning agent step")
 
 
 class ChatResponse(BaseModel):
@@ -535,6 +537,7 @@ async def get_conversation(
                 "model": m["model"],
                 "confidence": m["confidence"],
                 "reasoning_path": m["reasoning_path"],
+                "processing_steps": m["reasoning_path"],  # Alias for frontend compatibility
                 "sources": m["sources"],
                 "created_at": m["created_at"].isoformat(),
             }
@@ -698,7 +701,14 @@ async def stream_chat(
                 else (preferred_agents_enabled if preferred_agents_enabled is not None else True)
             )
             memory_agent_enabled = bool(user_pref_settings.get("agent_memory_enabled", True))
-            show_reasoning = bool(user_pref_settings.get("show_reasoning", True))
+            # Use request reasoning_enabled if provided, else fall back to user preference
+            show_reasoning = (
+                message.reasoning_enabled 
+                if message.reasoning_enabled is not None 
+                else bool(user_pref_settings.get("show_reasoning", True))
+            )
+            # Use request reasoning_model if provided, else fall back to user preference or default
+            reasoning_model = message.reasoning_model or str(user_pref_settings.get("reasoning_model", "qwen3-32b"))
             custom_key_override = custom_provider_keys.get(provider.lower())
 
             # Create/get conversation
@@ -813,20 +823,199 @@ async def stream_chat(
                 yield f"data: {json.dumps({'type': 'step', 'data': step1_complete.to_dict()})}\n\n"
 
                 # =========================================================================
-                # STEP 2: Graph Traversal (Neo4j)
+                # STEP 2: Connected Memories (Canvas Edges)
                 # =========================================================================
+                connected_memories: list[dict] = []
+                connected_memory_contents: list[str] = []
+                
                 if memory_results:
                     step_start = time.time()
                     
                     step2 = StreamingStepResult(
                         step=2,
+                        action="Checking connected memories",
+                        status="running",
+                        description="Finding user-defined memory connections",
+                        reasoning="Analyzing canvas edges with embedded reasons",
+                        details=[{"type": "info", "content": "Querying memory.canvas_edges for connections"}]
+                    )
+                    yield f"data: {json.dumps({'type': 'step', 'data': step2.to_dict()})}\n\n"
+                    
+                    connection_details: list[dict] = []
+                    
+                    try:
+                        # Get memory IDs from results
+                        memory_ids = [m.node_id for m in memory_results[:10]]
+                        
+                        async with postgres.connection() as conn:
+                            # Query canvas_edges for connections between found memories
+                            # and also connections FROM found memories to other memories
+                            edges_query = """
+                            WITH source_memories AS (
+                                SELECT UNNEST($1::uuid[]) AS mem_id
+                            )
+                            SELECT 
+                                ce.id AS edge_id,
+                                ce.source_memory_id,
+                                ce.target_memory_id,
+                                ce.reason,
+                                ce.confidence AS edge_confidence,
+                                ce.weight,
+                                ce.connection_count,
+                                source_mem.content AS source_content,
+                                source_mem.embedding AS source_embedding,
+                                target_mem.content AS target_content,
+                                target_mem.embedding AS target_embedding,
+                                target_mem.layer AS target_layer
+                            FROM memory.canvas_edges ce
+                            JOIN memory.embeddings source_mem ON ce.source_memory_id = source_mem.id
+                            JOIN memory.embeddings target_mem ON ce.target_memory_id = target_mem.id
+                            WHERE ce.source_memory_id = ANY($1::uuid[])
+                               OR ce.target_memory_id = ANY($1::uuid[])
+                            ORDER BY ce.weight DESC, ce.connection_count DESC
+                            LIMIT 15
+                            """
+                            
+                            edge_records = await conn.fetch(edges_query, memory_ids)
+                            
+                            connection_details.append({
+                                "type": "info", 
+                                "content": f"Found {len(edge_records)} memory connections"
+                            })
+                            
+                            # Process each edge and compute enhanced confidence
+                            from src.rag.similarity import cosine_similarity
+                            import numpy as np
+                            
+                            for edge in edge_records:
+                                source_content = edge["source_content"][:60]
+                                target_content = edge["target_content"][:60]
+                                reason = edge["reason"] or ""
+                                edge_conf = edge["edge_confidence"] or 0.8
+                                weight = edge["weight"] or 1.0
+                                conn_count = edge["connection_count"] or 1
+                                
+                                # Compute embedding similarity between source and target
+                                embedding_sim = 0.5  # Default
+                                try:
+                                    source_emb = edge["source_embedding"]
+                                    target_emb = edge["target_embedding"]
+                                    if source_emb and target_emb:
+                                        source_arr = np.array(source_emb)
+                                        target_arr = np.array(target_emb)
+                                        embedding_sim = float(cosine_similarity(source_arr, target_arr))
+                                        embedding_sim = max(0.0, min(1.0, (embedding_sim + 1) / 2))  # Normalize -1,1 to 0,1
+                                except Exception:
+                                    pass
+                                
+                                # Compute combined confidence:
+                                # - embedding_similarity: 0-1 (how similar the memories are)
+                                # - edge_confidence: 0-1 (user-provided confidence)
+                                # - weight: 1-2 (boosted by re-connections)
+                                # - connection_count: 1+ (how many times connected)
+                                # Formula: avg(emb_sim, edge_conf) * min(weight, 1.5) * (1 + log(conn_count)/10)
+                                import math
+                                base_conf = (embedding_sim * 0.4 + edge_conf * 0.6)  # Weighted avg
+                                weight_boost = min(weight, 1.5) / 1.0  # Normalize weight boost
+                                count_boost = 1.0 + (math.log(conn_count + 1) / 10.0)  # Log boost for count
+                                combined_confidence = min(1.0, base_conf * weight_boost * count_boost)
+                                
+                                connection_str = f"{source_content}... → {target_content}..."
+                                if reason:
+                                    connection_str += f" (reason: {reason[:30]})"
+                                
+                                connection_details.append({
+                                    "type": "connection",
+                                    "content": connection_str,
+                                    "metadata": {
+                                        "edge_id": str(edge["edge_id"]),
+                                        "confidence": round(combined_confidence, 2),
+                                        "embedding_similarity": round(embedding_sim, 2),
+                                        "weight": weight,
+                                    }
+                                })
+                                
+                                # Track connected memory for context
+                                # Find the "other" memory (not in our original results)
+                                target_id = edge["target_memory_id"]
+                                source_id = edge["source_memory_id"]
+                                other_id = target_id if source_id in memory_ids else source_id
+                                other_content = edge["target_content"] if source_id in memory_ids else edge["source_content"]
+                                
+                                connected_memories.append({
+                                    "memory_id": str(other_id),
+                                    "content": other_content,
+                                    "reason": reason,
+                                    "confidence": combined_confidence,
+                                    "layer": edge["target_layer"],
+                                    "connection_type": "canvas_edge",
+                                })
+                                connected_memory_contents.append(other_content)
+                            
+                            # Add summary node
+                            if connected_memories:
+                                avg_conf = sum(m["confidence"] for m in connected_memories) / len(connected_memories)
+                                connection_details.append({
+                                    "type": "result",
+                                    "content": f"Connected {len(connected_memories)} memories (avg confidence: {avg_conf:.0%})"
+                                })
+                            else:
+                                connection_details.append({
+                                    "type": "info",
+                                    "content": "No user-defined memory connections found"
+                                })
+                        
+                    except Exception as conn_err:
+                        logger.warning("connected_memories_error", error=str(conn_err))
+                        connection_details.append({
+                            "type": "error",
+                            "content": f"Connection lookup failed: {str(conn_err)[:50]}"
+                        })
+                    
+                    step_duration = int((time.time() - step_start) * 1000)
+                    
+                    step2_status = "completed" if connected_memories else "completed"
+                    step2_complete = StreamingStepResult(
+                        step=2,
+                        action="Checking connected memories",
+                        status=step2_status,
+                        description="Memory connection analysis complete",
+                        reasoning=f"Analyzed canvas edges with confidence scoring",
+                        result=f"Found {len(connected_memories)} connected memories",
+                        duration_ms=step_duration,
+                        details=connection_details
+                    )
+                    step_results.append(step2_complete.to_dict())
+                    yield f"data: {json.dumps({'type': 'step', 'data': step2_complete.to_dict()})}\n\n"
+                    
+                else:
+                    # No memory results, skip connected memories
+                    step2_skip = StreamingStepResult(
+                        step=2,
+                        action="Checking connected memories",
+                        status="skipped",
+                        description="Skipped - no memories to check connections for",
+                        reasoning="Connected memories requires base memories from RAG",
+                        details=[{"type": "info", "content": "No memories to analyze connections"}]
+                    )
+                    step_results.append(step2_skip.to_dict())
+                    yield f"data: {json.dumps({'type': 'step', 'data': step2_skip.to_dict()})}\n\n"
+
+                # =========================================================================
+                # STEP 3: Graph Traversal (Neo4j)
+                # =========================================================================
+                if memory_results:
+                    step_start = time.time()
+                    
+                    step3 = StreamingStepResult(
+                        step=3,
                         action="Accessing graph memory",
                         status="running",
                         description="Traversing knowledge graph for connected concepts",
                         reasoning="Following relationships between memory nodes",
                         details=[{"type": "info", "content": "Querying Neo4j graph database"}]
                     )
-                    yield f"data: {json.dumps({'type': 'step', 'data': step2.to_dict()})}\n\n"
+                    yield f"data: {json.dumps({'type': 'step', 'data': step3.to_dict()})}\n\n"
                     
                     # Get seed nodes for graph traversal
                     seed_nodes = [str(m.node_id) for m in memory_results[:5]]
@@ -910,8 +1099,8 @@ async def stream_chat(
 
                     step_duration = int((time.time() - step_start) * 1000)
                     
-                    step2_complete = StreamingStepResult(
-                        step=2,
+                    step3_complete = StreamingStepResult(
+                        step=3,
                         action="Accessing graph memory",
                         status="completed",
                         description="Graph traversal complete",
@@ -920,20 +1109,20 @@ async def stream_chat(
                         duration_ms=step_duration,
                         details=graph_details
                     )
-                    step_results.append(step2_complete.to_dict())
-                    yield f"data: {json.dumps({'type': 'step', 'data': step2_complete.to_dict()})}\n\n"
+                    step_results.append(step3_complete.to_dict())
+                    yield f"data: {json.dumps({'type': 'step', 'data': step3_complete.to_dict()})}\n\n"
                 else:
                     # No memory results, skip graph
-                    step2_skip = StreamingStepResult(
-                        step=2,
+                    step3_skip = StreamingStepResult(
+                        step=3,
                         action="Accessing graph memory",
                         status="skipped",
                         description="Skipped - no seed nodes from vector search",
                         reasoning="Graph traversal requires seed nodes from memory search",
                         details=[{"type": "info", "content": "No memories found to expand via graph"}]
                     )
-                    step_results.append(step2_skip.to_dict())
-                    yield f"data: {json.dumps({'type': 'step', 'data': step2_skip.to_dict()})}\n\n"
+                    step_results.append(step3_skip.to_dict())
+                    yield f"data: {json.dumps({'type': 'step', 'data': step3_skip.to_dict()})}\n\n"
 
             else:
                 # Agents disabled
@@ -950,17 +1139,28 @@ async def stream_chat(
 
                 step2_skip = StreamingStepResult(
                     step=2,
+                    action="Checking connected memories",
+                    status="skipped",
+                    description="Connected memories check disabled by settings",
+                    reasoning="Agents disabled - no connection check performed",
+                    details=[]
+                )
+                step_results.append(step2_skip.to_dict())
+                yield f"data: {json.dumps({'type': 'step', 'data': step2_skip.to_dict()})}\n\n"
+
+                step3_skip = StreamingStepResult(
+                    step=3,
                     action="Accessing graph memory",
                     status="skipped",
                     description="Graph search disabled by settings",
                     reasoning="Agents disabled - no graph traversal performed",
                     details=[]
                 )
-                step_results.append(step2_skip.to_dict())
-                yield f"data: {json.dumps({'type': 'step', 'data': step2_skip.to_dict()})}\n\n"
+                step_results.append(step3_skip.to_dict())
+                yield f"data: {json.dumps({'type': 'step', 'data': step3_skip.to_dict()})}\n\n"
 
             # =========================================================================
-            # STEP 3: Web Search (conditional)
+            # STEP 4: Web Search (conditional)
             # =========================================================================
             step_start = time.time()
             web_search_details: list[dict] = []
@@ -974,15 +1174,15 @@ async def stream_chat(
             
             should_search_web = len(memory_results) < 2 or avg_confidence < 0.5
             
-            step3 = StreamingStepResult(
-                step=3,
+            step4 = StreamingStepResult(
+                step=4,
                 action="Surfing web",
                 status="running" if should_search_web else "skipped",
                 description="Searching for additional context online" if should_search_web else "Sufficient context from memory",
                 reasoning=f"{'Insufficient memory context, fetching external data' if should_search_web else f'Memory confidence {avg_confidence:.0%} is sufficient'}",
                 details=[{"type": "info", "content": "Evaluating need for web search..."}]
             )
-            yield f"data: {json.dumps({'type': 'step', 'data': step3.to_dict()})}\n\n"
+            yield f"data: {json.dumps({'type': 'step', 'data': step4.to_dict()})}\n\n"
             
             if should_search_web:
                 # In production, this would call Tavily/SerpAPI
@@ -994,8 +1194,8 @@ async def stream_chat(
                 ]
                 step_duration = int((time.time() - step_start) * 1000)
                 
-                step3_complete = StreamingStepResult(
-                    step=3,
+                step4_complete = StreamingStepResult(
+                    step=4,
                     action="Surfing web",
                     status="skipped",
                     description="Web search not configured",
@@ -1006,8 +1206,8 @@ async def stream_chat(
                 )
             else:
                 step_duration = int((time.time() - step_start) * 1000)
-                step3_complete = StreamingStepResult(
-                    step=3,
+                step4_complete = StreamingStepResult(
+                    step=4,
                     action="Surfing web",
                     status="skipped",
                     description="Sufficient context from memory",
@@ -1020,39 +1220,46 @@ async def stream_chat(
                     ]
                 )
             
-            step_results.append(step3_complete.to_dict())
-            yield f"data: {json.dumps({'type': 'step', 'data': step3_complete.to_dict()})}\n\n"
+            step_results.append(step4_complete.to_dict())
+            yield f"data: {json.dumps({'type': 'step', 'data': step4_complete.to_dict()})}\n\n"
 
             # =========================================================================
-            # STEP 4: Reasoning Agent (if enabled)
+            # STEP 5: Reasoning Agent (if enabled)
             # =========================================================================
             reasoning_result = None
             synthesized_context = ""
             reasoning_trace = ""
+            
+            # Include connected memory contents in reasoning
+            all_memory_contents = []
+            for m in memory_results[:10]:
+                all_memory_contents.append(m.content)
+            all_memory_contents.extend(connected_memory_contents[:5])  # Add connected memories
             
             if show_reasoning and memory_results:
                 from src.models.nvidia import get_nvidia_client
                 
                 step_start = time.time()
                 
-                step4_reasoning = StreamingStepResult(
-                    step=4,
+                step5_reasoning = StreamingStepResult(
+                    step=5,
                     action="Reasoning over context",
                     status="running",
                     description="Analyzing memory nodes and graph paths",
                     reasoning="Using reasoning agent to synthesize context with explicit reasoning traces",
                     details=[
                         {"type": "info", "content": "Model: Nemotron Reasoning Agent"},
-                        {"type": "info", "content": f"Processing {len(memory_results)} memory nodes"},
+                        {"type": "info", "content": f"Processing {len(memory_results)} memory nodes + {len(connected_memories)} connected"},
                         {"type": "info", "content": f"Processing {len(graph_paths)} graph paths"},
                     ]
                 )
-                yield f"data: {json.dumps({'type': 'step', 'data': step4_reasoning.to_dict()})}\n\n"
+                yield f"data: {json.dumps({'type': 'step', 'data': step5_reasoning.to_dict()})}\n\n"
                 
                 try:
                     nvidia_client = get_nvidia_client()
                     
                     # Convert memory results to dict format for reasoning agent
+                    # Include both direct memories and connected memories
                     memory_nodes_dict = [
                         {
                             "content": m.content,
@@ -1063,12 +1270,23 @@ async def stream_chat(
                         for m in memory_results[:10]
                     ]
                     
+                    # Add connected memories with their confidence
+                    for cm in connected_memories[:5]:
+                        memory_nodes_dict.append({
+                            "content": cm["content"],
+                            "score": cm["confidence"],
+                            "layer": cm["layer"],
+                            "node_id": cm["memory_id"],
+                            "connection_reason": cm.get("reason", ""),
+                        })
+                    
                     reasoning_result = await nvidia_client.reason_over_nodes(
                         query=message.content,
                         memory_nodes=memory_nodes_dict,
                         graph_paths=graph_paths,
                         api_key=custom_provider_keys.get("nvidia"),
                         enable_thinking=True,
+                        reasoning_model=reasoning_model,
                     )
                     
                     synthesized_context = reasoning_result.get("synthesized_context", "")
@@ -1079,6 +1297,7 @@ async def stream_chat(
                     step_duration = int((time.time() - step_start) * 1000)
                     
                     reasoning_details = [
+                        {"type": "info", "content": f"Model: {reasoning_result.get('model_used', reasoning_model)}"},
                         {"type": "info", "content": f"Reasoning confidence: {reasoning_confidence:.0%}"},
                     ]
                     
@@ -1103,8 +1322,8 @@ async def stream_chat(
                         "content": f"Synthesized context: {len(synthesized_context)} chars"
                     })
                     
-                    step4_complete = StreamingStepResult(
-                        step=4,
+                    step5_complete = StreamingStepResult(
+                        step=5,
                         action="Reasoning over context",
                         status="completed",
                         description="Context reasoning complete",
@@ -1113,15 +1332,15 @@ async def stream_chat(
                         duration_ms=step_duration,
                         details=reasoning_details
                     )
-                    step_results.append(step4_complete.to_dict())
-                    yield f"data: {json.dumps({'type': 'step', 'data': step4_complete.to_dict()})}\n\n"
+                    step_results.append(step5_complete.to_dict())
+                    yield f"data: {json.dumps({'type': 'step', 'data': step5_complete.to_dict()})}\n\n"
                     
                 except Exception as reasoning_err:
                     logger.warning("reasoning_agent_error", error=str(reasoning_err))
                     step_duration = int((time.time() - step_start) * 1000)
                     
-                    step4_failed = StreamingStepResult(
-                        step=4,
+                    step5_failed = StreamingStepResult(
+                        step=5,
                         action="Reasoning over context",
                         status="skipped",
                         description="Reasoning agent unavailable",
@@ -1129,28 +1348,28 @@ async def stream_chat(
                         duration_ms=step_duration,
                         details=[{"type": "info", "content": "Using direct memory context"}]
                     )
-                    step_results.append(step4_failed.to_dict())
-                    yield f"data: {json.dumps({'type': 'step', 'data': step4_failed.to_dict()})}\n\n"
+                    step_results.append(step5_failed.to_dict())
+                    yield f"data: {json.dumps({'type': 'step', 'data': step5_failed.to_dict()})}\n\n"
             else:
                 # Skip reasoning step
-                step4_skip = StreamingStepResult(
-                    step=4,
+                step5_skip = StreamingStepResult(
+                    step=5,
                     action="Reasoning over context",
                     status="skipped",
                     description="Reasoning disabled or no memory context",
                     reasoning="Using direct context assembly" if memory_results else "No memories to reason over",
                     details=[{"type": "info", "content": "Proceeding to response generation"}]
                 )
-                step_results.append(step4_skip.to_dict())
-                yield f"data: {json.dumps({'type': 'step', 'data': step4_skip.to_dict()})}\n\n"
+                step_results.append(step5_skip.to_dict())
+                yield f"data: {json.dumps({'type': 'step', 'data': step5_skip.to_dict()})}\n\n"
 
             # =========================================================================
-            # STEP 5: Generate Response (LLM)
+            # STEP 6: Generate Response (LLM)
             # =========================================================================
             step_start = time.time()
             
-            step5 = StreamingStepResult(
-                step=5,
+            step6 = StreamingStepResult(
+                step=6,
                 action="Generating response",
                 status="running",
                 description="Synthesizing answer from all gathered context",
@@ -1160,7 +1379,7 @@ async def stream_chat(
                     {"type": "info", "content": f"Model: {model}"},
                 ]
             )
-            yield f"data: {json.dumps({'type': 'step', 'data': step5.to_dict()})}\n\n"
+            yield f"data: {json.dumps({'type': 'step', 'data': step6.to_dict()})}\n\n"
 
             # Build context - use synthesized context if reasoning was performed
             context = ""
@@ -1170,9 +1389,18 @@ async def stream_chat(
                 context = synthesized_context
                 if reasoning_trace:
                     reasoning_context = f"\n\nReasoning Trace:\n{reasoning_trace}"
-            elif memory_results:
+            elif memory_results or connected_memories:
                 context_assembler = ContextAssembler()
                 context = context_assembler.assemble(scored_nodes=memory_results)
+                
+                # Add connected memory context
+                if connected_memories:
+                    context += "\n\nConnected Memories:\n"
+                    for cm in connected_memories[:5]:
+                        context += f"- {cm['content'][:100]}"
+                        if cm.get('reason'):
+                            context += f" (connected because: {cm['reason']})"
+                        context += f" [confidence: {cm['confidence']:.0%}]\n"
                 
                 # Build reasoning path string
                 if graph_paths:
@@ -1237,12 +1465,12 @@ async def stream_chat(
 
             step_duration = int((time.time() - step_start) * 1000)
             
-            step5_complete = StreamingStepResult(
-                step=5,
+            step6_complete = StreamingStepResult(
+                step=6,
                 action="Generating response",
                 status="completed",
                 description="Response generated successfully",
-                reasoning=f"{'Used memory context with ' + str(len(memory_results)) + ' nodes' if context else 'No memory context available'}",
+                reasoning=f"{'Used memory context with ' + str(len(memory_results)) + ' nodes + ' + str(len(connected_memories)) + ' connected' if context else 'No memory context available'}",
                 result=f"Generated using {provider}/{model}",
                 duration_ms=step_duration,
                 details=[
@@ -1252,8 +1480,8 @@ async def stream_chat(
                     {"type": "result", "content": f"Response generated ({len(response_text)} chars)"}
                 ]
             )
-            step_results.append(step5_complete.to_dict())
-            yield f"data: {json.dumps({'type': 'step', 'data': step5_complete.to_dict()})}\n\n"
+            step_results.append(step6_complete.to_dict())
+            yield f"data: {json.dumps({'type': 'step', 'data': step6_complete.to_dict()})}\n\n"
 
             # Save assistant message
             assistant_message_id = uuid4()

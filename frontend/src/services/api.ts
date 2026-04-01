@@ -283,6 +283,8 @@ export const chatApi = {
     model?: string,
     agentsEnabled = true,
     workspaceId?: string,
+    reasoningModel?: string,
+    reasoningEnabled = true,
     onStep?: (step: StreamingStep) => void,
     onResponse?: (response: StreamingResponse) => void,
     onError?: (error: string) => void,
@@ -300,6 +302,8 @@ export const chatApi = {
       provider,
       model,
       agents_enabled: agentsEnabled,
+      reasoning_model: reasoningModel,
+      reasoning_enabled: reasoningEnabled,
     });
 
     fetch(`${API_BASE}/chat/stream`, {
@@ -481,6 +485,10 @@ export const modelsApi = {
     return request('/models/recommendations');
   },
   
+  async getReasoningModels() {
+    return request('/models/reasoning');
+  },
+  
   async testModel(providerId: string, modelId: string) {
     return request(`/models/test/${providerId}/${modelId}`, { method: 'POST' });
   },
@@ -490,6 +498,7 @@ export interface ProfileSettingsPayload {
   default_provider?: string;
   default_model?: string;
   default_memory_layer?: 'personal' | 'workspace' | 'global';
+  reasoning_model?: string;
   theme?: 'dark' | 'light' | 'system';
   compact_mode?: boolean;
   show_confidence?: boolean;
@@ -519,6 +528,7 @@ export interface ProfileSettingsResponse {
     default_provider: string;
     default_model: string;
     default_memory_layer: 'personal' | 'tenant' | 'global';
+    reasoning_model?: string;
     agents_enabled: boolean;
     theme: 'dark' | 'light' | 'system';
     compact_mode: boolean;

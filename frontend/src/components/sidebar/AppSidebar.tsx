@@ -1,6 +1,5 @@
 import {
   History,
-  Network,
   LogOut,
   
   Brain,
@@ -134,8 +133,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="font-sans">
       <SidebarHeader className="h-24 justify-center border-b border-white/10 bg-gradient-to-b from-purple-900/35 via-purple-950/20 to-transparent px-4">
         <div className="flex w-full items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-200 via-purple-100 to-fuchsia-100 shadow-[0_12px_28px_-14px_rgba(212,166,255,0.95)]">
-            <Network className="h-5 w-5 text-purple-950 stroke-[2.2]" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 via-purple-500 to-fuchsia-600 shadow-[0_0_20px_rgba(168,85,247,0.4)] border border-white/20 p-2">
+            <img src="/logo.svg" alt="NeuroGraph" className="h-full w-full brightness-0 invert drop-shadow-[0_0_6px_rgba(255,255,255,0.4)]" />
           </div>
           {!collapsed && (
             <div className="flex min-w-0 flex-col cursor-pointer" onClick={() => navigate('/')}>
@@ -280,37 +279,23 @@ export function AppSidebar() {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <SidebarGroup className="mt-auto">
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => navigate('/memory')} tooltip="MEMORY">
-                      <Brain className="h-4 w-4" />
-                      <span>MEMORY</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => navigate('/chat')} tooltip="Home">
-                      <Home className="h-4 w-4" />
-                      <span>Home</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => navigate('/profile')} tooltip="Profile">
-                      <User className="h-4 w-4" />
-                      <span>Profile</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
           </>
         )}
       </SidebarContent>
 
-            <SidebarFooter className="border-t border-white/10 p-3">
+      <SidebarFooter className="border-t border-white/10 p-3">
+        <div className="mb-2 rounded-2xl border border-white/10 bg-white/5 p-1.5">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={() => navigate('/memory')} tooltip="MEMORY">
+                <Brain className="h-4 w-4" />
+                <span>MEMORY</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </div>
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex w-full outline-none items-center gap-3 rounded-2xl p-2 text-left hover:bg-white/5 transition-colors">
+          <DropdownMenuTrigger className="flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-2xl p-2 text-left outline-none transition-colors hover:bg-white/5">
             <Avatar className="h-8 w-8 border border-white/10">
               <AvatarFallback className="bg-purple-900/50 text-xs font-medium text-purple-200">
                 {userInitials}
