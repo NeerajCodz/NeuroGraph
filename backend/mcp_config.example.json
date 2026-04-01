@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "neurograph": {
+      "command": "python",
+      "args": ["-m", "src.mcp.neurograph_mcp"],
+      "cwd": "E:\\codz\\Projects\\NeuroGraph\\backend",
+      "env": {
+        "NEUROGRAPH_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}

@@ -10,6 +10,7 @@ from fastapi.responses import ORJSONResponse
 from src.api.middleware.error_handler import error_handler_middleware
 from src.api.middleware.logging import logging_middleware
 from src.api.routes import api_router
+from src.mcp.http_transport import router as mcp_router
 from src.core.config import get_settings
 from src.core.logging import get_logger, setup_logging
 from src.db.neo4j import get_neo4j_driver
@@ -84,6 +85,9 @@ def create_app() -> FastAPI:
     
     # Include API routes
     app.include_router(api_router, prefix="/api/v1")
+    
+    # Include MCP HTTP transport
+    app.include_router(mcp_router, prefix="/api/v1")
     
     # Health check endpoint
     @app.get("/health")

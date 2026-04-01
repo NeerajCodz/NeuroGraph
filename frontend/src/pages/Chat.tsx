@@ -490,8 +490,8 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full">
-      <section className="flex flex-col flex-1 min-h-0 w-full mx-auto max-w-4xl">
+    <div className="flex h-full w-full flex-col">
+      <section className="flex h-full w-full max-w-4xl mx-auto flex-col">
         {/* Top Bar */}
         <div className={cn('flex justify-between items-center px-4 md:px-6 shrink-0 gap-3 border-b border-white/5', compactMode ? 'py-2' : 'py-3')}>
           <div className="flex items-center gap-2">

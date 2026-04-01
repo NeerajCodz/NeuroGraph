@@ -105,10 +105,12 @@
   html,
   body {
     height: 100%;
+    overflow: hidden;
   }
 
   #root {
-    min-height: 100%;
+    height: 100%;
+    overflow: hidden;
   }
 
   body {
@@ -120,8 +122,6 @@
       radial-gradient(circle at 84% 18%, rgba(255, 159, 252, 0.22) 0, transparent 38%),
       radial-gradient(circle at 65% 86%, rgba(56, 189, 248, 0.16) 0, transparent 44%),
       linear-gradient(166deg, #050110 0%, #0d0422 48%, #050110 100%);
-    overflow-x: hidden;
-    overflow-y: auto;
   }
 
   ::selection {

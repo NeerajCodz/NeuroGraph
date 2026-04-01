@@ -101,3 +101,7 @@ def verify_token(token: str) -> dict[str, Any]:
         raise TokenExpiredError("Token has expired") from e
     except JWTError as e:
         raise InvalidTokenError(f"Invalid token: {e}") from e
+
+
+# Alias for backwards compatibility
+decode_token = verify_token
