@@ -23,10 +23,19 @@ class GeminiClient:
 
     def __init__(self) -> None:
         self._settings = get_settings()
-        self._client = genai.Client(
-            api_key=self._settings.gemini_api_key.get_secret_value()
+        configured_key = (
+            self._settings.gemini_api_key.get_secret_value()
+            if self._settings.gemini_api_key
+            else None
         )
+        self._client = genai.Client(api_key=configured_key) if configured_key else None
         self._last_call_time = 0.0
+
+    def _build_client(self, api_key: str | None = None):
+        """Get client instance, optionally with per-request API key override."""
+        if api_key:
+            return genai.Client(api_key=api_key)
+        return self._client
 
     async def _rate_limit_delay(self) -> None:
         """Ensure minimum delay between API calls."""
@@ -50,6 +59,7 @@ class GeminiClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         json_mode: bool = False,
+        api_key: str | None = None,
     ) -> str:
         """Generate text completion using Gemini.
         
@@ -65,6 +75,9 @@ class GeminiClient:
             Generated text response
         """
         model_name = model or self._settings.gemini_model_flash
+        client = self._build_client(api_key)
+        if client is None:
+            raise GeminiError("Gemini API not configured. Set GEMINI_API_KEY.")
         
         try:
             # Apply rate limiting
@@ -79,7 +92,7 @@ class GeminiClient:
             if json_mode:
                 config.response_mime_type = "application/json"
             
-            response = await self._client.aio.models.generate_content(
+            response = await client.aio.models.generate_content(
                 model=model_name,
                 contents=prompt,
                 config=config,
@@ -110,6 +123,7 @@ class GeminiClient:
         context: str,
         system_instruction: str | None = None,
         model: str | None = None,
+        api_key: str | None = None,
     ) -> str:
         """Generate response with provided context.
         
@@ -140,6 +154,7 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
             prompt=full_prompt,
             system_instruction=system_instruction or default_system,
             model=model or self._settings.gemini_model_flash,
+            api_key=api_key,
         )
 
     @retry(
@@ -153,6 +168,7 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
         model: str | None = None,
         output_dimensionality: int = 768,
         task_type: str = "RETRIEVAL_DOCUMENT",
+        api_key: str | None = None,
     ) -> np.ndarray:
         """Generate embeddings for text.
         
@@ -168,6 +184,9 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
         from google.genai import types
         
         model_name = model or self._settings.gemini_model_embedding
+        client = self._build_client(api_key)
+        if client is None:
+            raise EmbeddingError("Gemini API not configured. Set GEMINI_API_KEY.")
         
         if isinstance(text, str):
             texts = [text]
@@ -178,7 +197,7 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
             # Apply rate limiting
             await self._rate_limit_delay()
             
-            response = await self._client.aio.models.embed_content(
+            response = await client.aio.models.embed_content(
                 model=model_name,
                 contents=texts,
                 config=types.EmbedContentConfig(

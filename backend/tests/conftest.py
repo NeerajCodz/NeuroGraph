@@ -45,7 +45,7 @@ def mock_settings():
         settings.gemini_api_key.get_secret_value.return_value = "test-key"
         settings.gemini_model_flash = "gemini-2.0-flash"
         settings.gemini_model_pro = "gemini-2.0-pro"
-        settings.gemini_model_embedding = "text-embedding-004"
+        settings.gemini_model_embedding = "models/gemini-embedding-2-preview"
         settings.groq_api_key = MagicMock()
         settings.groq_api_key.get_secret_value.return_value = "test-key"
         settings.groq_model = "llama-3.3-70b-versatile"

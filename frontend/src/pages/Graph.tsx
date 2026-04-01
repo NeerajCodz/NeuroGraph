@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import GraphVisualization from '../components/graph/GraphVisualization';
+import GraphVisualization from '@/components/graph/GraphVisualization';
 import { SpotlightCard } from '@/components/reactbits/SpotlightCard';
 import { BlurText } from '@/components/reactbits/BlurText';
 import { Activity, Loader2 } from 'lucide-react';

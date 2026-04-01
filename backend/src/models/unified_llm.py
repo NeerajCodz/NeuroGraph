@@ -79,29 +79,29 @@ class UnifiedLLM:
         """Get list of configured providers."""
         providers = []
         
-        # Gemini is always available if key is set
-        if self._settings.gemini_api_key:
-            providers.append({
-                "id": "gemini",
-                "name": "Google Gemini",
-                "models": AVAILABLE_MODELS[LLMProvider.GEMINI],
-            })
+        # Gemini is available if key is set
+        providers.append({
+            "id": "gemini",
+            "name": "Google Gemini",
+            "models": AVAILABLE_MODELS[LLMProvider.GEMINI],
+            "is_available": bool(self._settings.gemini_api_key),
+        })
         
-        # NVIDIA if key is set
-        if self._settings.nvidia_api_key:
-            providers.append({
-                "id": "nvidia",
-                "name": "NVIDIA AI",
-                "models": AVAILABLE_MODELS[LLMProvider.NVIDIA],
-            })
+        # NVIDIA 
+        providers.append({
+            "id": "nvidia",
+            "name": "NVIDIA AI",
+            "models": AVAILABLE_MODELS[LLMProvider.NVIDIA],
+            "is_available": bool(self._settings.nvidia_api_key),
+        })
         
-        # Groq if key is set
-        if self._settings.groq_api_key:
-            providers.append({
-                "id": "groq",
-                "name": "Groq",
-                "models": AVAILABLE_MODELS[LLMProvider.GROQ],
-            })
+        # Groq
+        providers.append({
+            "id": "groq",
+            "name": "Groq",
+            "models": AVAILABLE_MODELS[LLMProvider.GROQ],
+            "is_available": bool(self._settings.groq_api_key),
+        })
         
         return providers
 

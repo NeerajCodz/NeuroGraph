@@ -14,11 +14,22 @@ logger = get_logger(__name__)
 
 # Cache TTL for embeddings (7 days)
 EMBEDDING_CACHE_TTL = 60 * 60 * 24 * 7
+FALLBACK_EMBEDDING_DIMENSION = 768
 
 
 def _hash_text(text: str) -> str:
     """Create a hash of text for cache key."""
     return hashlib.sha256(text.encode()).hexdigest()[:32]
+
+
+def _deterministic_fallback_embedding(text: str, dimension: int = FALLBACK_EMBEDDING_DIMENSION) -> np.ndarray:
+    """Generate a deterministic local embedding fallback when providers fail."""
+    values = [((ord(ch) % 97) / 97.0) for ch in text]
+    if not values:
+        values = [0.0]
+    repeats = (dimension + len(values) - 1) // len(values)
+    vector = (values * repeats)[:dimension]
+    return np.array(vector, dtype=np.float32)
 
 
 class EmbeddingsService:
@@ -71,9 +82,13 @@ class EmbeddingsService:
                 return cached
         
         # Generate new embedding
-        embedding = await self._gemini.embed(text, task_type=task_type)
-        result = embedding[0]
-        
+        try:
+            embedding = await self._gemini.embed(text, task_type=task_type)
+            result = embedding[0]
+        except Exception as e:
+            logger.warning("embedding_provider_failed_using_fallback", error=str(e), task_type=task_type)
+            result = _deterministic_fallback_embedding(text)
+
         # Cache for future use (only documents)
         if task_type == "RETRIEVAL_DOCUMENT":
             await self._set_cached_embedding(text, result)

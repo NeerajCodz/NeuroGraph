@@ -17,9 +17,18 @@ class GroqClient:
 
     def __init__(self) -> None:
         self._settings = get_settings()
-        self._client = AsyncGroq(
-            api_key=self._settings.groq_api_key.get_secret_value()
+        configured_key = (
+            self._settings.groq_api_key.get_secret_value()
+            if self._settings.groq_api_key
+            else None
         )
+        self._client = AsyncGroq(api_key=configured_key) if configured_key else None
+
+    def _build_client(self, api_key: str | None = None):
+        """Get client instance, optionally with per-request API key override."""
+        if api_key:
+            return AsyncGroq(api_key=api_key)
+        return self._client
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
     async def generate(
@@ -30,6 +39,7 @@ class GroqClient:
         temperature: float = 0.3,
         max_tokens: int = 2048,
         json_mode: bool = False,
+        api_key: str | None = None,
     ) -> str:
         """Generate text completion using Groq.
         
@@ -45,6 +55,9 @@ class GroqClient:
             Generated text response
         """
         model_name = model or self._settings.groq_model
+        client = self._build_client(api_key)
+        if client is None:
+            raise GroqError("Groq API not configured. Set GROQ_API_KEY.")
         
         messages = []
         if system_instruction:
@@ -62,7 +75,7 @@ class GroqClient:
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
             
-            response = await self._client.chat.completions.create(**kwargs)
+            response = await client.chat.completions.create(**kwargs)
             
             content = response.choices[0].message.content
             if not content:
@@ -87,6 +100,7 @@ class GroqClient:
         self,
         message: str,
         conversation_history: list[dict[str, str]] | None = None,
+        api_key: str | None = None,
     ) -> dict[str, Any]:
         """Classify user intent for orchestration.
         
@@ -137,6 +151,7 @@ Respond with JSON:
             system_instruction=system,
             json_mode=True,
             temperature=0.1,
+            api_key=api_key,
         )
         
         import json
@@ -157,6 +172,7 @@ Respond with JSON:
         self,
         intent: dict[str, Any],
         available_agents: list[str],
+        api_key: str | None = None,
     ) -> list[dict[str, Any]]:
         """Plan which agents to spawn based on intent.
         
@@ -198,6 +214,7 @@ Order by priority (1 = highest). Identify dependencies between agents."""
             prompt=prompt,
             json_mode=True,
             temperature=0.2,
+            api_key=api_key,
         )
         
         import json

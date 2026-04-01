@@ -1,5 +1,6 @@
 """Neo4j database driver and connection management."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
@@ -18,34 +19,54 @@ class Neo4jDriver:
 
     def __init__(self) -> None:
         self._driver: AsyncDriver | None = None
+        self._driver_loop: asyncio.AbstractEventLoop | None = None
+        self._connect_lock = asyncio.Lock()
         self._settings = get_settings()
 
     async def connect(self) -> None:
         """Establish connection to Neo4j."""
-        if self._driver is not None:
-            return
+        current_loop = asyncio.get_running_loop()
 
-        try:
-            self._driver = AsyncGraphDatabase.driver(
-                self._settings.neo4j_uri,
-                auth=(
-                    self._settings.neo4j_username,
-                    self._settings.neo4j_password.get_secret_value(),
-                ),
-                max_connection_pool_size=self._settings.neo4j_max_connection_pool_size,
-            )
-            # Verify connectivity
-            await self._driver.verify_connectivity()
-            logger.info("neo4j_connected", uri=self._settings.neo4j_uri)
-        except Exception as e:
-            logger.error("neo4j_connection_failed", error=str(e))
-            raise ConnectionError(f"Failed to connect to Neo4j: {e}") from e
+        async with self._connect_lock:
+            if (
+                self._driver is not None
+                and self._driver_loop is current_loop
+                and not current_loop.is_closed()
+            ):
+                return
+
+            if self._driver is not None:
+                try:
+                    await self._driver.close()
+                except Exception as close_error:
+                    logger.warning("neo4j_driver_close_failed", error=str(close_error))
+                finally:
+                    self._driver = None
+                    self._driver_loop = None
+
+            try:
+                self._driver = AsyncGraphDatabase.driver(
+                    self._settings.neo4j_uri,
+                    auth=(
+                        self._settings.neo4j_username,
+                        self._settings.neo4j_password.get_secret_value(),
+                    ),
+                    max_connection_pool_size=self._settings.neo4j_max_connection_pool_size,
+                )
+                # Verify connectivity
+                await self._driver.verify_connectivity()
+                self._driver_loop = current_loop
+                logger.info("neo4j_connected", uri=self._settings.neo4j_uri)
+            except Exception as e:
+                logger.error("neo4j_connection_failed", error=str(e))
+                raise ConnectionError(f"Failed to connect to Neo4j: {e}") from e
 
     async def disconnect(self) -> None:
         """Close Neo4j connection."""
         if self._driver is not None:
             await self._driver.close()
             self._driver = None
+            self._driver_loop = None
             logger.info("neo4j_disconnected")
 
     @property
@@ -58,6 +79,14 @@ class Neo4jDriver:
     @asynccontextmanager
     async def session(self, database: str | None = None) -> AsyncGenerator[AsyncSession, None]:
         """Get a Neo4j session."""
+        current_loop = asyncio.get_running_loop()
+        if (
+            self._driver is None
+            or self._driver_loop is None
+            or self._driver_loop is not current_loop
+            or current_loop.is_closed()
+        ):
+            await self.connect()
         db = database or self._settings.neo4j_database
         session = self.driver.session(database=db)
         try:

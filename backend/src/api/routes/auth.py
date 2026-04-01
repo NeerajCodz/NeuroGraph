@@ -49,16 +49,40 @@ class RefreshTokenRequest(BaseModel):
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate) -> UserResponse:
     """Register a new user."""
-    # TODO: Implement user registration with database
-    from uuid import uuid4
-    
-    # Placeholder implementation
+    from src.db.postgres import get_postgres_driver
+
+    postgres = get_postgres_driver()
+    normalized_email = str(user_data.email).strip().lower()
+    hashed_password = hash_password(user_data.password)
+
+    async with postgres.connection() as conn:
+        existing = await conn.fetchrow(
+            "SELECT id FROM auth.users WHERE lower(email) = lower($1)",
+            normalized_email,
+        )
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        created = await conn.fetchrow(
+            """
+            INSERT INTO auth.users (email, hashed_password, full_name, is_active)
+            VALUES ($1, $2, $3, TRUE)
+            RETURNING id, email, full_name, is_active, created_at
+            """,
+            normalized_email,
+            hashed_password,
+            user_data.full_name,
+        )
+
+    if not created:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+
     return UserResponse(
-        id=uuid4(),
-        email=user_data.email,
-        full_name=user_data.full_name,
-        is_active=True,
-        created_at=datetime.utcnow(),
+        id=created["id"],
+        email=created["email"],
+        full_name=created["full_name"],
+        is_active=created["is_active"],
+        created_at=created["created_at"],
     )
 
 
@@ -66,25 +90,21 @@ async def register(user_data: UserCreate) -> UserResponse:
 async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> TokenResponse:
     """Login and get access token."""
     from src.db.postgres import get_postgres_driver
-    import bcrypt
     
     settings = get_settings()
     postgres = get_postgres_driver()
     
     # Validate credentials against database
     user = await postgres.fetchrow(
-        "SELECT id, email, hashed_password FROM auth.users WHERE email = $1",
-        form_data.username,
+        "SELECT id, email, hashed_password FROM auth.users WHERE lower(email) = lower($1)",
+        form_data.username.strip(),
     )
     
     if not user:
         raise AuthenticationError("Invalid email or password")
     
     # Verify password
-    if not bcrypt.checkpw(
-        form_data.password.encode('utf-8'),
-        user["hashed_password"].encode('utf-8'),
-    ):
+    if not verify_password(form_data.password, user["hashed_password"]):
         raise AuthenticationError("Invalid email or password")
     
     access_token = create_access_token(

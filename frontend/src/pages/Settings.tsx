@@ -18,6 +18,7 @@ interface ProviderInfo {
   id: string;
   name: string;
   models: ModelInfo[];
+  is_available?: boolean;
 }
 
 export default function Settings() {
@@ -197,21 +198,37 @@ export default function Settings() {
               <Loader2 className="w-6 h-6 animate-spin text-purple-400" />
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {providers.map((provider) => (
-                <button
-                  key={provider.id}
-                  onClick={() => handleProviderChange(provider.id)}
-                  className={`flex flex-col items-center rounded-2xl px-3 py-4 transition-all ${
-                    activeProvider === provider.id
-                      ? 'bg-gradient-to-br from-cyan-500/30 to-purple-500/30 border border-cyan-400/40 text-white'
-                      : 'bg-white/5 border border-white/10 text-white/70 hover:bg-white/10'
-                  }`}
-                >
-                  <p className="font-medium text-sm">{provider.name}</p>
-                  <p className="text-[10px] text-white/50 mt-1">{provider.models.length} models</p>
-                </button>
-              ))}
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                {providers.map((provider) => (
+                  <button
+                    key={provider.id}
+                    onClick={() => handleProviderChange(provider.id)}
+                    disabled={provider.is_available === false}
+                    className={`flex flex-col items-center rounded-2xl px-3 py-4 transition-all ${
+                      provider.is_available === false
+                        ? 'bg-white/[0.02] border border-white/5 text-white/30 cursor-not-allowed'
+                        : activeProvider === provider.id
+                          ? 'bg-gradient-to-br from-cyan-500/30 to-purple-500/30 border border-cyan-400/40 text-white'
+                          : 'bg-white/5 border border-white/10 text-white/70 hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-sm">{provider.name}</p>
+                      {provider.is_available === false && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-300">Unavailable</span>
+                      )}
+                      {provider.is_available === true && (
+                        <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-white/50 mt-1">{provider.models.length} models</p>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-white/40 text-center">
+                {providers.filter(p => p.is_available !== false).length} of {providers.length} providers available
+              </p>
             </div>
           )}
         </SpotlightCard>
@@ -223,7 +240,7 @@ export default function Settings() {
             <h3 className="text-lg font-semibold">Model Selection</h3>
             <span className="ml-auto text-xs text-white/40">Provider: {providers.find(p => p.id === activeProvider)?.name}</span>
           </div>
-          <p className="text-sm text-white/60 mb-4">Choose the specific model for chat. Embedding model is fixed (text-embedding-004).</p>
+          <p className="text-sm text-white/60 mb-4">Choose the specific model for chat. Embedding model is fixed (gemini-embedding-2-preview).</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
             {currentProviderModels.map((model) => (
               <button

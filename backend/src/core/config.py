@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     gemini_model_flash: str = "gemini-2.0-flash"
     gemini_model_pro: str = "gemini-2.5-pro"
     gemini_model_lite: str = "gemini-2.0-flash-lite"
-    gemini_model_embedding: str = "models/embedding-002"  # gemini-embedding-2-preview
+    gemini_model_embedding: str = "models/gemini-embedding-2-preview"
 
     # Groq API
     groq_api_key: SecretStr = Field(default=...)

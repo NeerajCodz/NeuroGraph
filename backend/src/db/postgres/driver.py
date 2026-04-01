@@ -1,5 +1,6 @@
 """PostgreSQL database driver with pgvector support."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
@@ -19,32 +20,51 @@ class PostgresDriver:
 
     def __init__(self) -> None:
         self._pool: asyncpg.Pool | None = None
+        self._pool_loop: asyncio.AbstractEventLoop | None = None
+        self._connect_lock = asyncio.Lock()
         self._settings = get_settings()
 
     async def connect(self) -> None:
         """Establish connection pool to PostgreSQL."""
-        if self._pool is not None:
-            return
+        current_loop = asyncio.get_running_loop()
 
-        try:
-            self._pool = await asyncpg.create_pool(
-                host=self._settings.postgres_host,
-                port=self._settings.postgres_port,
-                user=self._settings.postgres_user,
-                password=self._settings.postgres_password.get_secret_value(),
-                database=self._settings.postgres_db,
-                min_size=self._settings.postgres_min_pool_size,
-                max_size=self._settings.postgres_max_pool_size,
-                init=self._init_connection,
-            )
-            logger.info(
-                "postgres_connected",
-                host=self._settings.postgres_host,
-                database=self._settings.postgres_db,
-            )
-        except Exception as e:
-            logger.error("postgres_connection_failed", error=str(e))
-            raise ConnectionError(f"Failed to connect to PostgreSQL: {e}") from e
+        async with self._connect_lock:
+            if (
+                self._pool is not None
+                and self._pool_loop is current_loop
+                and not current_loop.is_closed()
+            ):
+                return
+
+            if self._pool is not None:
+                try:
+                    await self._pool.close()
+                except Exception as close_error:
+                    logger.warning("postgres_pool_close_failed", error=str(close_error))
+                finally:
+                    self._pool = None
+                    self._pool_loop = None
+
+            try:
+                self._pool = await asyncpg.create_pool(
+                    host=self._settings.postgres_host,
+                    port=self._settings.postgres_port,
+                    user=self._settings.postgres_user,
+                    password=self._settings.postgres_password.get_secret_value(),
+                    database=self._settings.postgres_db,
+                    min_size=self._settings.postgres_min_pool_size,
+                    max_size=self._settings.postgres_max_pool_size,
+                    init=self._init_connection,
+                )
+                self._pool_loop = current_loop
+                logger.info(
+                    "postgres_connected",
+                    host=self._settings.postgres_host,
+                    database=self._settings.postgres_db,
+                )
+            except Exception as e:
+                logger.error("postgres_connection_failed", error=str(e))
+                raise ConnectionError(f"Failed to connect to PostgreSQL: {e}") from e
 
     async def _init_connection(self, conn: asyncpg.Connection) -> None:
         """Initialize connection with pgvector extension."""
@@ -55,6 +75,7 @@ class PostgresDriver:
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+            self._pool_loop = None
             logger.info("postgres_disconnected")
 
     @property
@@ -67,6 +88,14 @@ class PostgresDriver:
     @asynccontextmanager
     async def connection(self) -> AsyncGenerator[asyncpg.Connection, None]:
         """Get a connection from the pool."""
+        current_loop = asyncio.get_running_loop()
+        if (
+            self._pool is None
+            or self._pool_loop is None
+            or self._pool_loop is not current_loop
+            or current_loop.is_closed()
+        ):
+            await self.connect()
         async with self.pool.acquire() as conn:
             yield conn
 

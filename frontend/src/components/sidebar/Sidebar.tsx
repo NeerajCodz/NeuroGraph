@@ -19,7 +19,7 @@ export function Sidebar() {
         <Link to="/graph" className={linkClass('/graph')}><Network className="w-5 h-5" /> Knowledge Graph</Link>
       </nav>
       <div className="px-4 py-4 space-y-1 border-t border-slate-800">
-        <Link to="/settings" className={linkClass('/settings')}><Settings className="w-5 h-5" /> Settings</Link>
+        <Link to="/profile/settings" className={linkClass('/profile/settings')}><Settings className="w-5 h-5" /> Settings</Link>
         <Link to="/admin" className={linkClass('/admin')}><Shield className="w-5 h-5" /> Administration</Link>
         <div className="flex items-center gap-3 px-3 py-2 mt-4">
           <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center"><User className="w-5 h-5" /></div>

@@ -13,7 +13,10 @@ import {
   Settings2,
   Plug,
   Shield,
-  LayoutDashboard
+  LayoutDashboard,
+  Home,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -44,9 +47,18 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from '@/components/ui/collapsible';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { ShinyText } from '@/components/reactbits/ShinyText';
 import { useAuth } from '@/contexts/AuthContext';
 import { workspaceApi, conversationsApi } from '@/services/api';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface Workspace {
   id: string;
@@ -62,21 +74,31 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { state = 'expanded' } = useSidebar() || {};
+  const { state = 'expanded' } = useSidebar();
   const collapsed = state === 'collapsed';
+  const { sidebarCollapsed, setSidebarCollapsed } = useTheme();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [newChatWorkspaceId, setNewChatWorkspaceId] = useState<string>('personal');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [wsResult, convResult] = await Promise.all([
-          workspaceApi.list(),
-          conversationsApi.list()
-        ]);
-        setWorkspaces(Array.isArray(wsResult) ? wsResult : []);
-        setConversations(Array.isArray(convResult) ? convResult : []);
+        const wsResult = await workspaceApi.list();
+        const wsList = Array.isArray(wsResult) ? wsResult : [];
+        setWorkspaces(wsList);
+
+        const personalConversations = await conversationsApi.list();
+        const workspaceConversationGroups = await Promise.all(
+          wsList.map((ws) => conversationsApi.list(ws.id).catch(() => []))
+        );
+        const all = [
+          ...(Array.isArray(personalConversations) ? personalConversations : []),
+          ...workspaceConversationGroups.flat().filter((c) => !!c),
+        ] as Conversation[];
+        const deduped = Array.from(new Map(all.map((c) => [c.id, c])).values());
+        setConversations(deduped);
       } catch (err) {
         console.error('Error fetching sidebar data:', err);
       }
@@ -84,9 +106,11 @@ export function AppSidebar() {
     fetchData();
   }, []);
 
-  const handleNewChat = () => {
-    navigate('/chat');
-    window.dispatchEvent(new CustomEvent('new-chat'));
+  const handleNewChat = (workspaceId?: string | null) => {
+    const targetWorkspaceId = workspaceId && workspaceId !== 'personal' ? workspaceId : null;
+    const chatUrl = targetWorkspaceId ? `/chat?workspace_id=${targetWorkspaceId}` : '/chat';
+    navigate(chatUrl);
+    window.dispatchEvent(new CustomEvent('new-chat', { detail: { workspaceId: targetWorkspaceId } }));
   };
 
   const userInitials = user?.full_name
@@ -103,7 +127,7 @@ export function AppSidebar() {
     { title: 'Preferences', url: '/profile/preferences', icon: Settings2 },
     { title: 'Integrations', url: '/profile/integrations', icon: Plug },
     { title: 'Security', url: '/profile/security', icon: Shield },
-    { title: 'Settings', url: '/settings', icon: LayoutDashboard }
+    { title: 'Settings', url: '/profile/settings', icon: LayoutDashboard }
   ];
 
   return (
@@ -120,6 +144,27 @@ export function AppSidebar() {
             </div>
           )}
         </div>
+        {!collapsed && (
+          <div className="mt-3 flex w-full gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 flex-1 border-white/15 bg-white/10 text-white/85 hover:bg-white/15"
+              onClick={() => navigate('/chat')}
+            >
+              <Home className="mr-1.5 h-3.5 w-3.5" />
+              Home
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 border-white/15 bg-white/10 text-white/85 hover:bg-white/15"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+        )}
       </SidebarHeader>
 
       <SidebarContent className="flex flex-col gap-5 px-3 py-5">
@@ -128,19 +173,24 @@ export function AppSidebar() {
             <SidebarGroupLabel className="text-white/60">Profile Navigation</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {profileSidebarItems.map(item => (
+                {profileSidebarItems.map(item => {
+                  const isActive = item.url === '/profile'
+                    ? location.pathname === '/profile'
+                    : location.pathname.startsWith(item.url);
+                  return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton 
                       tooltip={item.title} 
                       onClick={() => navigate(item.url)}
-                      isActive={location.pathname === item.url}
+                      isActive={isActive}
                       className="group/menu"
                     >
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                ))}
+                  );
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -149,17 +199,42 @@ export function AppSidebar() {
             <SidebarGroup className="p-0">
               <SidebarMenu>
                 <SidebarMenuItem>
-                  <SidebarMenuButton
-                    tooltip="New Chat"
-                    onClick={handleNewChat}
-                    className="gradient-primary text-primary-foreground h-11 rounded-2xl"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>New Chat</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroup>
+                    <SidebarMenuButton
+                      tooltip="New Chat"
+                      onClick={() => handleNewChat(newChatWorkspaceId)}
+                      className="gradient-primary text-primary-foreground h-11 rounded-2xl"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>New Chat</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  {!collapsed && (
+                    <SidebarMenuItem className="pt-2">
+                      <Select
+                        value={newChatWorkspaceId}
+                        onValueChange={(value) => {
+                          setNewChatWorkspaceId(value);
+                          handleNewChat(value);
+                        }}
+                      >
+                        <SelectTrigger className="h-9 w-full rounded-xl border-white/10 bg-white/5 text-white/80">
+                          <SelectValue placeholder="Open under workspace" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#110825] border-white/10">
+                          <SelectItem value="personal" className="text-white/75">
+                            Personal (no workspace)
+                          </SelectItem>
+                          {workspaces.map((ws) => (
+                            <SelectItem key={ws.id} value={ws.id} className="text-white">
+                              {ws.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </SidebarMenuItem>
+                  )}
+                </SidebarMenu>
+              </SidebarGroup>
 
             {workspaces.map(ws => (
               <Collapsible key={ws.id} asChild defaultOpen className="group/collapsible">
@@ -215,6 +290,12 @@ export function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
+                    <SidebarMenuButton onClick={() => navigate('/chat')} tooltip="Home">
+                      <Home className="h-4 w-4" />
+                      <span>Home</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
                     <SidebarMenuButton onClick={() => navigate('/profile')} tooltip="Profile">
                       <User className="h-4 w-4" />
                       <span>Profile</span>
@@ -248,8 +329,15 @@ export function AppSidebar() {
             <DropdownMenuItem onClick={() => navigate('/profile')} className="text-white hover:bg-white/10">
               <User className="mr-2 h-4 w-4" /> Profile
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/settings')} className="text-white hover:bg-white/10">
+            <DropdownMenuItem onClick={() => navigate('/profile/settings')} className="text-white hover:bg-white/10">
               <Settings2 className="mr-2 h-4 w-4" /> Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="text-white hover:bg-white/10"
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="mr-2 h-4 w-4" /> : <PanelLeftClose className="mr-2 h-4 w-4" />}
+              {sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-white/10" />
             <DropdownMenuItem onClick={logout} className="text-red-400 hover:text-red-300 hover:bg-red-400/10">

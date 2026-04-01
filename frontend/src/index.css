@@ -5,45 +5,55 @@
 
 @layer base {
   :root {
-    --background: 247 52% 4%;
-    --foreground: 260 36% 97%;
-    --card: 252 46% 8%;
-    --card-foreground: 260 30% 95%;
-    --popover: 250 44% 7%;
-    --popover-foreground: 260 30% 95%;
-    --primary: 272 90% 68%;
-    --primary-foreground: 248 55% 8%;
-    --secondary: 252 33% 18%;
-    --secondary-foreground: 260 24% 95%;
-    --muted: 251 30% 14%;
-    --muted-foreground: 258 16% 72%;
-    --accent: 276 68% 22%;
-    --accent-foreground: 260 34% 98%;
-    --destructive: 0 84% 62%;
+    --background: 250 68% 4%;
+    --foreground: 262 35% 97%;
+    --card: 252 54% 8%;
+    --card-foreground: 263 32% 95%;
+    --popover: 252 58% 7%;
+    --popover-foreground: 263 32% 95%;
+    --primary: 257 100% 58%;
+    --primary-foreground: 261 100% 98%;
+    --secondary: 255 42% 17%;
+    --secondary-foreground: 263 30% 96%;
+    --muted: 252 36% 14%;
+    --muted-foreground: 261 20% 74%;
+    --accent: 311 100% 81%;
+    --accent-foreground: 260 56% 12%;
+    --destructive: 0 82% 60%;
     --destructive-foreground: 260 34% 98%;
-    --border: 254 35% 20%;
-    --input: 254 36% 16%;
-    --ring: 273 92% 72%;
-    --radius: 0.85rem;
+    --border: 256 48% 22%;
+    --input: 256 46% 16%;
+    --ring: 262 100% 74%;
+    --radius: 0.9rem;
 
-    --sidebar: 248 47% 7%;
-    --sidebar-foreground: 260 24% 90%;
-    --sidebar-primary: 272 90% 68%;
-    --sidebar-primary-foreground: 247 52% 5%;
-    --sidebar-accent: 256 35% 15%;
-    --sidebar-accent-foreground: 264 26% 95%;
-    --sidebar-border: 254 38% 19%;
-    --sidebar-ring: 276 94% 74%;
+    --sidebar: 248 56% 7%;
+    --sidebar-foreground: 260 28% 92%;
+    --sidebar-primary: 257 100% 58%;
+    --sidebar-primary-foreground: 261 100% 98%;
+    --sidebar-accent: 256 40% 16%;
+    --sidebar-accent-foreground: 263 30% 95%;
+    --sidebar-border: 255 42% 20%;
+    --sidebar-ring: 262 100% 74%;
 
     /* Custom colors for visualizations */
-    --viz-blue: 231 89% 72%;
-    --viz-purple: 276 92% 74%;
-    --viz-cyan: 199 92% 67%;
+    --viz-blue: 221 100% 71%;
+    --viz-purple: 257 100% 58%;
+    --viz-cyan: 199 94% 60%;
     --viz-green: 154 80% 56%;
-    --viz-orange: 25 94% 66%;
-    --viz-pink: 312 83% 68%;
+    --viz-orange: 24 96% 63%;
+    --viz-pink: 311 100% 81%;
     --viz-red: 0 82% 62%;
     --viz-lime: 87 80% 58%;
+
+    /* Landing theme constants */
+    --ng-bg-0: #050110;
+    --ng-bg-1: #0a031d;
+    --ng-bg-2: #14072c;
+    --ng-primary: #5227ff;
+    --ng-secondary: #b19eef;
+    --ng-accent: #ff9ffc;
+    --ng-cyan: #38bdf8;
+    --ng-text: #f7f4ff;
   }
 }
 
@@ -104,12 +114,19 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+    background-color: #050110;
     background-image:
-      radial-gradient(circle at 20% 12%, rgba(135, 82, 255, 0.34) 0, transparent 36%),
-      radial-gradient(circle at 82% 78%, rgba(192, 76, 255, 0.2) 0, transparent 42%),
-      linear-gradient(168deg, #05030f 0%, #120724 46%, #06020f 100%);
+      radial-gradient(circle at 18% 12%, rgba(82, 39, 255, 0.45) 0, transparent 33%),
+      radial-gradient(circle at 84% 18%, rgba(255, 159, 252, 0.22) 0, transparent 38%),
+      radial-gradient(circle at 65% 86%, rgba(56, 189, 248, 0.16) 0, transparent 44%),
+      linear-gradient(166deg, #050110 0%, #0d0422 48%, #050110 100%);
     overflow-x: hidden;
     overflow-y: auto;
+  }
+
+  ::selection {
+    background: rgba(82, 39, 255, 0.45);
+    color: #ffffff;
   }
 
   /* Enhanced Custom Scrollbar - Purple Theme */
@@ -183,6 +200,75 @@
 
   .purple-stroke {
     box-shadow: inset 0 0 0 1px rgba(180, 132, 255, 0.22);
+  }
+
+  .liquid-glass-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    border-radius: 9999px;
+    padding: 0.95rem 1.75rem;
+    font-size: 0.96rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #f8f5ff;
+    text-decoration: none;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: linear-gradient(135deg, rgba(177, 158, 239, 0.26), rgba(82, 39, 255, 0.2));
+    backdrop-filter: blur(16px) saturate(145%);
+    -webkit-backdrop-filter: blur(16px) saturate(145%);
+    box-shadow:
+      0 14px 34px -22px rgba(177, 158, 239, 0.95),
+      inset 0 1px 0 rgba(255, 255, 255, 0.32);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+  }
+
+  .liquid-glass-btn::after {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.03));
+    opacity: 0.62;
+  }
+
+  .liquid-glass-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    border-color: rgba(255, 255, 255, 0.38);
+    box-shadow:
+      0 24px 50px -28px rgba(177, 158, 239, 1),
+      0 0 30px -14px rgba(82, 39, 255, 0.8),
+      inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  }
+
+  .liquid-glass-btn:active {
+    transform: translateY(0) scale(0.99);
+  }
+
+  .liquid-glass-btn:focus-visible {
+    outline: 2px solid rgba(177, 158, 239, 0.8);
+    outline-offset: 3px;
+  }
+
+  .liquid-glass-btn--primary {
+    background: linear-gradient(130deg, rgba(82, 39, 255, 0.82), rgba(255, 159, 252, 0.52));
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow:
+      0 24px 55px -25px rgba(82, 39, 255, 0.95),
+      0 0 36px -16px rgba(255, 159, 252, 0.9),
+      inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  }
+
+  .liquid-glass-btn--theme {
+    background: linear-gradient(135deg, rgba(14, 7, 32, 0.85), rgba(21, 11, 43, 0.9));
+    border-color: rgba(177, 158, 239, 0.44);
+    color: #efe8ff;
+    box-shadow:
+      0 18px 40px -24px rgba(82, 39, 255, 0.95),
+      inset 0 1px 0 rgba(255, 255, 255, 0.24);
   }
 
   .scrollbar-thin::-webkit-scrollbar {

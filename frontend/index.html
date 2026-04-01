@@ -8,6 +8,19 @@
   </head>
   <body>
     <div id="root"></div>
+    <script type="module">
+      if (!window.__vite_plugin_react_preamble_installed__) {
+        try {
+          const refresh = await import('/@react-refresh');
+          refresh.default.injectIntoGlobalHook(window);
+          window.$RefreshReg$ = () => {};
+          window.$RefreshSig$ = () => (type) => type;
+          window.__vite_plugin_react_preamble_installed__ = true;
+        } catch {
+          // Not running under Vite dev server.
+        }
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -6,6 +6,7 @@ from src.api.dependencies import get_current_user
 from src.models.unified_llm import get_unified_llm, AVAILABLE_MODELS, LLMProvider
 from src.models.nvidia import get_available_nvidia_models, NVIDIA_MODELS
 from src.core.logging import get_logger
+from src.db.postgres import get_postgres_driver
 
 logger = get_logger(__name__)
 
@@ -68,7 +69,7 @@ async def list_gemini_models(current_user = Depends(get_current_user)):
     return {
         "provider": "gemini",
         "models": AVAILABLE_MODELS[LLMProvider.GEMINI],
-        "embedding_model": "text-embedding-004",  # Fixed embedding model
+        "embedding_model": "models/gemini-embedding-2-preview",  # Fixed embedding model
         "note": "Embedding model is fixed and cannot be changed",
     }
 
@@ -106,21 +107,66 @@ async def test_model(
     Useful for verifying API keys and model availability.
     """
     llm = get_unified_llm()
+    postgres = get_postgres_driver()
+    custom_keys: dict[str, str] = {}
+
+    async with postgres.connection() as conn:
+        pref = await conn.fetchrow(
+            """
+            SELECT settings
+            FROM chat.user_preferences
+            WHERE user_id = $1
+            """,
+            current_user["id"],
+        )
+    if pref and isinstance(pref["settings"], dict):
+        raw_keys = pref["settings"].get("custom_provider_keys")
+        if isinstance(raw_keys, dict):
+            custom_keys = {str(k): str(v) for k, v in raw_keys.items() if isinstance(v, str) and v}
+
+    provider = provider_id.lower()
+    key_override = custom_keys.get(provider)
     
     try:
-        response = await llm.generate(
-            prompt="Say 'Hello from NeuroGraph' in exactly those words.",
-            provider=provider_id,
-            model=model_id,
-            temperature=0.1,
-            max_tokens=50,
-        )
+        if provider == "gemini":
+            response = await llm._get_gemini().generate(
+                prompt="Say 'Hello from NeuroGraph' in exactly those words.",
+                model=model_id,
+                temperature=0.1,
+                max_tokens=50,
+                api_key=key_override,
+            )
+        elif provider == "groq":
+            response = await llm._get_groq().generate(
+                prompt="Say 'Hello from NeuroGraph' in exactly those words.",
+                model=model_id,
+                temperature=0.1,
+                max_tokens=50,
+                api_key=key_override,
+            )
+        elif provider == "nvidia":
+            response = await llm._get_nvidia().generate(
+                prompt="Say 'Hello from NeuroGraph' in exactly those words.",
+                model=model_id,
+                temperature=0.1,
+                max_tokens=50,
+                api_key=key_override,
+            )
+        else:
+            response = await llm.generate(
+                prompt="Say 'Hello from NeuroGraph' in exactly those words.",
+                provider=provider_id,
+                model=model_id,
+                temperature=0.1,
+                max_tokens=50,
+            )
         
         return {
             "success": True,
             "provider": provider_id,
             "model": model_id,
             "response": response,
+            "used_custom_key": bool(key_override),
         }
     except Exception as e:
         logger.error("model_test_failed", provider=provider_id, model=model_id, error=str(e))
@@ -154,9 +200,9 @@ async def get_model_recommendations(current_user = Depends(get_current_user)):
                 "fallback": {"provider": "gemini", "model": "gemini-2.0-flash-lite"},
             },
             "embeddings": {
-                "note": "Always uses Gemini text-embedding-004 (768 dimensions)",
+                "note": "Always uses Gemini gemini-embedding-2-preview (768 dimensions)",
                 "provider": "gemini",
-                "model": "text-embedding-004",
+                "model": "models/gemini-embedding-2-preview",
                 "dimensions": 768,
             },
         },

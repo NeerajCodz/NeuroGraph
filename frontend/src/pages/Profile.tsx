@@ -1,18 +1,22 @@
-import { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { 
-  User, 
-  Bot, 
-  Cpu, 
-  Sliders, 
-  Link2, 
-  Shield, 
-  Settings,
-  ChevronRight,
-  Save,
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import {
+  Activity,
+  Bot,
+  Brain,
+  Check,
+  Cpu,
+  Download,
+  Eye,
   Loader2,
-  Check
+  Save,
+  Settings2,
+  Shield,
+  SlidersHorizontal,
+  SunMoon,
+  Zap,
 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,577 +28,781 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
-import { modelsApi } from '@/services/api';
+import { useTheme } from '@/contexts/ThemeContext';
+import { modelsApi, profileApi, type ProfileSettingsResponse } from '@/services/api';
 
-interface ProfileNavItem {
-  id: string;
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  description: string;
+type ProfileSection = 'profile' | 'agents' | 'models' | 'preferences' | 'integrations' | 'security' | 'settings';
+
+interface SaveState {
+  isSaving: boolean;
+  isSaved: boolean;
+  error: string;
 }
 
-const navItems: ProfileNavItem[] = [
-  { id: 'profile', title: 'Profile', icon: User, description: 'Personal information' },
-  { id: 'agents', title: 'Agents', icon: Bot, description: 'AI agent configuration' },
-  { id: 'models', title: 'AI Models', icon: Cpu, description: 'Model preferences' },
-  { id: 'preferences', title: 'Preferences', icon: Sliders, description: 'App preferences' },
-  { id: 'integrations', title: 'Integrations', icon: Link2, description: 'Connected services' },
-  { id: 'security', title: 'Security', icon: Shield, description: 'Security settings' },
-  { id: 'settings', title: 'Settings', icon: Settings, description: 'Advanced settings' },
-];
+interface AgentFlags {
+  agentsEnabled: boolean;
+  orchestratorEnabled: boolean;
+  memoryEnabled: boolean;
+  webEnabled: boolean;
+  parallelEnabled: boolean;
+  safeModeEnabled: boolean;
+  autoRetryEnabled: boolean;
+  autoMemoryUpdate: boolean;
+}
 
-interface ProviderInfo {
-  id: string;
-  name: string;
-  is_available: boolean;
-  models: { id: string; name: string; provider: string }[];
+interface ModelState {
+  provider: string;
+  model: string;
+  layer: 'personal' | 'workspace' | 'global';
+  customKeys: {
+    gemini: string;
+    groq: string;
+    nvidia: string;
+  };
+  testingProvider: string | null;
+  testStatus: Record<string, { ok: boolean; message: string }>;
+}
+
+interface AppearanceState {
+  theme: 'dark' | 'light' | 'system';
+  compactMode: boolean;
+  showConfidence: boolean;
+  showReasoning: boolean;
+}
+
+const cardClass =
+  'rounded-3xl border border-white/20 bg-white/10 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_20px_48px_-24px_rgba(0,0,0,0.65)]';
+
+const inputClass = 'mt-1.5 bg-white/8 border-white/20 text-white placeholder:text-white/45';
+
+function SaveButton({ state, onClick, label = 'Save Changes' }: { state: SaveState; onClick: () => void; label?: string }) {
+  return (
+    <div className="flex items-center justify-end gap-3">
+      {state.error ? <p className="text-xs text-red-300">{state.error}</p> : null}
+      <Button
+        onClick={onClick}
+        disabled={state.isSaving}
+        className="bg-gradient-to-r from-purple-500/90 via-fuchsia-500/85 to-violet-500/90 text-white shadow-lg"
+      >
+        {state.isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        {!state.isSaving && state.isSaved ? <Check className="mr-2 h-4 w-4" /> : null}
+        {state.isSaving ? 'Saving...' : state.isSaved ? 'Saved' : label}
+      </Button>
+    </div>
+  );
 }
 
 export default function Profile() {
   const location = useLocation();
-  const navigate = useNavigate();
-  
-  // Determine active section from URL
-  const pathParts = location.pathname.split('/');
-  const activeSection = pathParts[2] || 'profile';
+  const { user, refreshUser } = useAuth();
+  const {
+    theme,
+    setTheme,
+    compactMode,
+    setCompactMode,
+    showConfidence,
+    setShowConfidence,
+    showReasoning,
+    setShowReasoning,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+  } = useTheme();
 
-  const handleNavClick = (id: string) => {
-    navigate(`/profile/${id === 'profile' ? '' : id}`);
+  const section = (location.pathname.split('/')[2] || 'profile') as ProfileSection;
+  const [isLoading, setIsLoading] = useState(true);
+  const [globalError, setGlobalError] = useState('');
+  const [settingsSnapshot, setSettingsSnapshot] = useState<ProfileSettingsResponse | null>(null);
+
+  const [fullName, setFullName] = useState('');
+  const [profileSave, setProfileSave] = useState<SaveState>({ isSaving: false, isSaved: false, error: '' });
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [securitySave, setSecuritySave] = useState<SaveState>({ isSaving: false, isSaved: false, error: '' });
+
+  const [agents, setAgents] = useState<AgentFlags>({
+    agentsEnabled: true,
+    orchestratorEnabled: true,
+    memoryEnabled: true,
+    webEnabled: true,
+    parallelEnabled: true,
+    safeModeEnabled: true,
+    autoRetryEnabled: true,
+    autoMemoryUpdate: true,
+  });
+  const [agentsSave, setAgentsSave] = useState<SaveState>({ isSaving: false, isSaved: false, error: '' });
+
+  const [models, setModels] = useState<ModelState>({
+    provider: 'gemini',
+    model: 'gemini-2.0-flash',
+    layer: 'personal',
+    customKeys: { gemini: '', groq: '', nvidia: '' },
+    testingProvider: null,
+    testStatus: {},
+  });
+  const [modelSave, setModelSave] = useState<SaveState>({ isSaving: false, isSaved: false, error: '' });
+
+  const [appearance, setAppearance] = useState<AppearanceState>({
+    theme: theme,
+    compactMode,
+    showConfidence,
+    showReasoning,
+  });
+  const [appearanceSave, setAppearanceSave] = useState<SaveState>({ isSaving: false, isSaved: false, error: '' });
+
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
+  const [settingsSave, setSettingsSave] = useState<SaveState>({ isSaving: false, isSaved: false, error: '' });
+  const [exporting, setExporting] = useState(false);
+
+  const providers = settingsSnapshot?.settings.available_providers || [];
+  const providerModels = useMemo(
+    () => settingsSnapshot?.settings.available_models?.[models.provider] || [],
+    [settingsSnapshot, models.provider],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setIsLoading(true);
+      setGlobalError('');
+      try {
+        const data = await profileApi.getSettings();
+        if (cancelled) return;
+
+        setSettingsSnapshot(data);
+        setFullName(data.user.full_name || user?.full_name || '');
+        setAgents({
+          agentsEnabled: data.settings.agents_enabled,
+          orchestratorEnabled: data.settings.agent_orchestrator_enabled,
+          memoryEnabled: data.settings.agent_memory_enabled,
+          webEnabled: data.settings.agent_web_enabled,
+          parallelEnabled: data.settings.agent_parallel_enabled,
+          safeModeEnabled: data.settings.agent_safe_mode,
+          autoRetryEnabled: data.settings.agent_auto_retry,
+          autoMemoryUpdate: data.settings.auto_memory_update,
+        });
+        setModels({
+          provider: data.settings.default_provider,
+          model: data.settings.default_model,
+          layer: data.settings.default_memory_layer === 'tenant' ? 'workspace' : data.settings.default_memory_layer,
+          customKeys: { gemini: '', groq: '', nvidia: '' },
+          testingProvider: null,
+          testStatus: {},
+        });
+        setAppearance({
+          theme: data.settings.theme,
+          compactMode: data.settings.compact_mode,
+          showConfidence: data.settings.show_confidence,
+          showReasoning: data.settings.show_reasoning,
+        });
+        setAnalyticsEnabled(data.settings.analytics_enabled);
+      } catch (err) {
+        setGlobalError(err instanceof Error ? err.message : 'Failed to load profile settings');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.full_name]);
+
+  useEffect(() => {
+    if (!providerModels.some((m) => m.id === models.model) && providerModels.length > 0) {
+      setModels((prev) => ({ ...prev, model: providerModels[0].id }));
+    }
+  }, [providerModels, models.model]);
+
+  const pulseSaved = (setter: (state: SaveState) => void) => {
+    setter({ isSaving: false, isSaved: true, error: '' });
+    setTimeout(() => setter({ isSaving: false, isSaved: false, error: '' }), 1800);
   };
 
-  return (
-    <div className="flex min-h-screen bg-linear-to-b from-[#050110] via-[#0a0520] to-[#050110]">
-      {/* Profile Sidebar */}
-      <aside className="w-64 border-r border-white/10 bg-black/20 p-4 shrink-0">
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold text-white">Settings</h2>
-          <p className="text-xs text-white/50">Manage your account</p>
+  const saveProfile = async () => {
+    setProfileSave({ isSaving: true, isSaved: false, error: '' });
+    try {
+      await profileApi.updateProfile(fullName.trim());
+      await refreshUser();
+      pulseSaved(setProfileSave);
+    } catch (err) {
+      setProfileSave({ isSaving: false, isSaved: false, error: err instanceof Error ? err.message : 'Failed to save profile' });
+    }
+  };
+
+  const saveSecurity = async () => {
+    setSecuritySave({ isSaving: true, isSaved: false, error: '' });
+    try {
+      await profileApi.updatePassword(currentPassword, newPassword, confirmPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      pulseSaved(setSecuritySave);
+    } catch (err) {
+      setSecuritySave({ isSaving: false, isSaved: false, error: err instanceof Error ? err.message : 'Failed to update password' });
+    }
+  };
+
+  const saveAgents = async () => {
+    setAgentsSave({ isSaving: true, isSaved: false, error: '' });
+    try {
+      await profileApi.updateSettings({
+        agents_enabled: agents.agentsEnabled,
+        agent_orchestrator_enabled: agents.orchestratorEnabled,
+        agent_memory_enabled: agents.memoryEnabled,
+        agent_web_enabled: agents.webEnabled,
+        agent_parallel_enabled: agents.parallelEnabled,
+        agent_safe_mode: agents.safeModeEnabled,
+        agent_auto_retry: agents.autoRetryEnabled,
+        auto_memory_update: agents.autoMemoryUpdate,
+      });
+      pulseSaved(setAgentsSave);
+    } catch (err) {
+      setAgentsSave({ isSaving: false, isSaved: false, error: err instanceof Error ? err.message : 'Failed to save agent settings' });
+    }
+  };
+
+  const saveModels = async () => {
+    setModelSave({ isSaving: true, isSaved: false, error: '' });
+    try {
+      const customKeys = (['gemini', 'groq', 'nvidia'] as const)
+        .filter((provider) => models.customKeys[provider].trim().length > 0)
+        .map((provider) => ({ provider, api_key: models.customKeys[provider].trim() }));
+
+      await profileApi.updateSettings({
+        default_provider: models.provider,
+        default_model: models.model,
+        default_memory_layer: models.layer,
+        custom_keys: customKeys.length > 0 ? customKeys : undefined,
+      });
+      localStorage.setItem('ng_default_provider', models.provider);
+      localStorage.setItem('ng_default_model', models.model);
+      localStorage.setItem('ng_default_layer', models.layer === 'workspace' ? 'tenant' : models.layer);
+      const refreshed = await profileApi.getSettings();
+      setSettingsSnapshot(refreshed);
+      setModels((prev) => ({ ...prev, customKeys: { gemini: '', groq: '', nvidia: '' } }));
+      pulseSaved(setModelSave);
+    } catch (err) {
+      setModelSave({ isSaving: false, isSaved: false, error: err instanceof Error ? err.message : 'Failed to save model settings' });
+    }
+  };
+
+  const testProvider = async (provider: 'gemini' | 'groq' | 'nvidia') => {
+    const providerInfo = providers.find((p) => p.id === provider);
+    const testModel = providerInfo?.models?.[0]?.id;
+    if (!testModel) return;
+
+    setModels((prev) => ({ ...prev, testingProvider: provider }));
+    try {
+      const result = await modelsApi.testModel(provider, testModel) as {
+        success: boolean;
+        error?: string;
+        used_custom_key?: boolean;
+      };
+      setModels((prev) => ({
+        ...prev,
+        testingProvider: null,
+        testStatus: {
+          ...prev.testStatus,
+          [provider]: {
+            ok: Boolean(result.success),
+            message: result.success
+              ? result.used_custom_key
+                ? 'Connection verified (using your custom key)'
+                : 'Connection verified'
+              : result.error || 'Test failed',
+          },
+        },
+      }));
+    } catch (err) {
+      setModels((prev) => ({
+        ...prev,
+        testingProvider: null,
+        testStatus: {
+          ...prev.testStatus,
+          [provider]: { ok: false, message: err instanceof Error ? err.message : 'Test failed' },
+        },
+      }));
+    }
+  };
+
+  const saveAppearance = async () => {
+    setAppearanceSave({ isSaving: true, isSaved: false, error: '' });
+    try {
+      setTheme(appearance.theme);
+      setCompactMode(appearance.compactMode);
+      setShowConfidence(appearance.showConfidence);
+      setShowReasoning(appearance.showReasoning);
+
+      await profileApi.updateSettings({
+        theme: appearance.theme,
+        compact_mode: appearance.compactMode,
+        show_confidence: appearance.showConfidence,
+        show_reasoning: appearance.showReasoning,
+        sidebar_collapsed: sidebarCollapsed,
+      });
+      const refreshed = await profileApi.getSettings();
+      setSettingsSnapshot(refreshed);
+      pulseSaved(setAppearanceSave);
+    } catch (err) {
+      setAppearanceSave({ isSaving: false, isSaved: false, error: err instanceof Error ? err.message : 'Failed to save appearance settings' });
+    }
+  };
+
+  const saveGeneralSettings = async () => {
+    setSettingsSave({ isSaving: true, isSaved: false, error: '' });
+    try {
+      await profileApi.updateSettings({ analytics_enabled: analyticsEnabled, sidebar_collapsed: sidebarCollapsed });
+      const refreshed = await profileApi.getSettings();
+      setSettingsSnapshot(refreshed);
+      pulseSaved(setSettingsSave);
+    } catch (err) {
+      setSettingsSave({ isSaving: false, isSaved: false, error: err instanceof Error ? err.message : 'Failed to save settings' });
+    }
+  };
+
+  const exportData = async () => {
+    setExporting(true);
+    setSettingsSave((prev) => ({ ...prev, error: '' }));
+    try {
+      const payload = await profileApi.exportData();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `neurograph-export-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setSettingsSave((prev) => ({ ...prev, error: err instanceof Error ? err.message : 'Export failed' }));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-300" />
+      </div>
+    );
+  }
+
+  const renderProfile = () => (
+    <div className="space-y-6">
+      <section className={`${cardClass} p-6`}>
+        <h2 className="mb-1 text-xl font-semibold text-white">Profile</h2>
+        <p className="mb-5 text-sm text-white/65">Update your account details and identity.</p>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <Label className="text-white/75">Full Name</Label>
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <Label className="text-white/75">Email</Label>
+            <Input value={user?.email || settingsSnapshot?.user.email || ''} readOnly className={`${inputClass} opacity-80`} />
+          </div>
         </div>
-        
-        <nav className="space-y-1">
-          {navItems.map((item) => {
-            const isActive = activeSection === item.id || 
-              (item.id === 'profile' && activeSection === 'profile');
+
+        <div className="mt-5 grid gap-3 rounded-2xl border border-white/15 bg-black/20 p-4 text-xs text-white/65 md:grid-cols-2">
+          <p>
+            User ID: <span className="font-mono text-white/85">{user?.id || settingsSnapshot?.user.id}</span>
+          </p>
+          <p>
+            Created: <span className="text-white/85">{new Date(user?.created_at || settingsSnapshot?.user.created_at || '').toLocaleString()}</span>
+          </p>
+        </div>
+      </section>
+
+      <SaveButton state={profileSave} onClick={saveProfile} />
+    </div>
+  );
+
+  const renderAgents = () => (
+    <div className="space-y-6">
+      <section className={`${cardClass} p-6`}>
+        <h2 className="mb-1 text-xl font-semibold text-white">Agents</h2>
+        <p className="mb-5 text-sm text-white/65">Fine tune orchestration, memory and safety controls.</p>
+
+        <div className="space-y-4">
+          {[
+            {
+              key: 'agentsEnabled',
+              title: 'Enable Agents',
+              desc: 'Master switch for agent-based reasoning and context assembly.',
+              icon: Bot,
+            },
+            {
+              key: 'orchestratorEnabled',
+              title: 'Orchestrator Agent',
+              desc: 'Routes each prompt to the best processing strategy.',
+              icon: Activity,
+            },
+            {
+              key: 'memoryEnabled',
+              title: 'Memory Agent',
+              desc: 'Retrieves relevant graph memories automatically.',
+              icon: Brain,
+            },
+            {
+              key: 'webEnabled',
+              title: 'Web Agent',
+              desc: 'Allows web-assisted enrichment when memory is insufficient.',
+              icon: Zap,
+            },
+            {
+              key: 'parallelEnabled',
+              title: 'Parallel Planning',
+              desc: 'Run independent agent tasks concurrently for faster results.',
+              icon: Cpu,
+            },
+            {
+              key: 'safeModeEnabled',
+              title: 'Safe Mode',
+              desc: 'Adds conservative checks before tool execution.',
+              icon: Shield,
+            },
+            {
+              key: 'autoRetryEnabled',
+              title: 'Auto Retry',
+              desc: 'Retry failed model/tool calls automatically when safe.',
+              icon: Settings2,
+            },
+            {
+              key: 'autoMemoryUpdate',
+              title: 'Auto Memory Update',
+              desc: 'Persist useful conversation insights to memory.',
+              icon: Save,
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+            const key = item.key as keyof AgentFlags;
             return (
-              <button
-                key={item.id}
-                onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
-                  isActive 
-                    ? 'bg-purple-500/20 text-purple-200 border border-purple-500/30' 
-                    : 'text-white/60 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <item.icon className="w-4 h-4" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{item.title}</p>
-                  <p className="text-[10px] text-white/40 truncate">{item.description}</p>
+              <div key={item.key} className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-medium text-white">
+                    <Icon className="h-4 w-4 text-purple-300" />
+                    {item.title}
+                  </p>
+                  <p className="mt-0.5 text-xs text-white/55">{item.desc}</p>
                 </div>
-                {isActive && <ChevronRight className="w-4 h-4 text-purple-400" />}
-              </button>
+                <Switch
+                  checked={agents[key]}
+                  onCheckedChange={(value) => setAgents((prev) => ({ ...prev, [key]: value }))}
+                />
+              </div>
             );
           })}
-        </nav>
-      </aside>
+        </div>
+      </section>
 
-      {/* Main Content */}
-      <main className="flex-1 p-8 overflow-y-auto">
-        <ProfileContent section={activeSection} />
-      </main>
+      <SaveButton state={agentsSave} onClick={saveAgents} />
     </div>
   );
-}
 
-function ProfileContent({ section }: { section: string }) {
-  const { user } = useAuth();
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const renderModels = () => (
+    <div className="space-y-6">
+      <section className={`${cardClass} p-6`}>
+        <h2 className="mb-1 text-xl font-semibold text-white">AI Models</h2>
+        <p className="mb-5 text-sm text-white/65">Choose providers/models and optionally use your own API keys.</p>
 
-  // Load providers for models section
-  useEffect(() => {
-    if (section === 'models') {
-      modelsApi.getProviders().then((result: unknown) => {
-        const data = result as { providers: ProviderInfo[] };
-        setProviders(data.providers || []);
-      }).catch(console.error);
-    }
-  }, [section]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    // Simulate save
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  const renderSection = () => {
-    switch (section) {
-      case 'profile':
-        return <ProfileSection user={user} onSave={handleSave} saving={saving} saved={saved} />;
-      case 'agents':
-        return <AgentsSection onSave={handleSave} saving={saving} saved={saved} />;
-      case 'models':
-        return <ModelsSection providers={providers} onSave={handleSave} saving={saving} saved={saved} />;
-      case 'preferences':
-        return <PreferencesSection onSave={handleSave} saving={saving} saved={saved} />;
-      case 'integrations':
-        return <IntegrationsSection />;
-      case 'security':
-        return <SecuritySection onSave={handleSave} saving={saving} saved={saved} />;
-      case 'settings':
-        return <SettingsSection onSave={handleSave} saving={saving} saved={saved} />;
-      default:
-        return <ProfileSection user={user} onSave={handleSave} saving={saving} saved={saved} />;
-    }
-  };
-
-  return renderSection();
-}
-
-interface SectionProps {
-  onSave: () => void;
-  saving: boolean;
-  saved: boolean;
-}
-
-function ProfileSection({ user, onSave, saving, saved }: SectionProps & { user: any }) {
-  const [fullName, setFullName] = useState(user?.full_name || '');
-  const [email, setEmail] = useState(user?.email || '');
-
-  return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-2">Profile</h1>
-      <p className="text-white/50 mb-8">Manage your personal information</p>
-
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Personal Information</h3>
-          
-          <div className="space-y-4">
-            <div>
-              <Label className="text-white/70">Full Name</Label>
-              <Input 
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="mt-1.5 bg-white/5 border-white/10 text-white"
-              />
-            </div>
-            <div>
-              <Label className="text-white/70">Email</Label>
-              <Input 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                type="email"
-                className="mt-1.5 bg-white/5 border-white/10 text-white"
-              />
-            </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <Label className="text-white/75">Provider</Label>
+            <Select value={models.provider} onValueChange={(value) => setModels((prev) => ({ ...prev, provider: value }))}>
+              <SelectTrigger className={inputClass}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-white/20 bg-[#100828] text-white">
+                {providers.map((provider) => (
+                  <SelectItem key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-white/75">Model</Label>
+            <Select value={models.model} onValueChange={(value) => setModels((prev) => ({ ...prev, model: value }))}>
+              <SelectTrigger className={inputClass}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-72 border-white/20 bg-[#100828] text-white">
+                {providerModels.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {model.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-white/75">Default Memory Layer</Label>
+            <Select
+              value={models.layer}
+              onValueChange={(value) => setModels((prev) => ({ ...prev, layer: value as 'personal' | 'workspace' | 'global' }))}
+            >
+              <SelectTrigger className={inputClass}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-white/20 bg-[#100828] text-white">
+                <SelectItem value="personal">Personal</SelectItem>
+                <SelectItem value="workspace">Workspace</SelectItem>
+                <SelectItem value="global">Global</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
+      </section>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Account Details</h3>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-white/40">User ID</p>
-              <p className="text-white/80 font-mono text-xs mt-1">{user?.id || 'N/A'}</p>
-            </div>
-            <div>
-              <p className="text-white/40">Account Created</p>
-              <p className="text-white/80 mt-1">{user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</p>
-            </div>
-          </div>
-        </div>
-
-        <SaveButton onSave={onSave} saving={saving} saved={saved} />
-      </div>
-    </div>
-  );
-}
-
-function AgentsSection({ onSave, saving, saved }: SectionProps) {
-  const [orchestratorEnabled, setOrchestratorEnabled] = useState(true);
-  const [memoryAgentEnabled, setMemoryAgentEnabled] = useState(true);
-  const [webSurferEnabled, setWebSurferEnabled] = useState(true);
-  const [autoMemoryUpdate, setAutoMemoryUpdate] = useState(true);
-
-  return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-2">Agents</h1>
-      <p className="text-white/50 mb-8">Configure AI agent behavior</p>
-
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Agent Controls</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Orchestrator Agent</p>
-                <p className="text-xs text-white/40">Routes queries to appropriate handlers</p>
-              </div>
-              <Switch checked={orchestratorEnabled} onCheckedChange={setOrchestratorEnabled} />
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Memory Manager Agent</p>
-                <p className="text-xs text-white/40">Manages knowledge graph operations</p>
-              </div>
-              <Switch checked={memoryAgentEnabled} onCheckedChange={setMemoryAgentEnabled} />
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Web Surfer Agent</p>
-                <p className="text-xs text-white/40">Searches external knowledge</p>
-              </div>
-              <Switch checked={webSurferEnabled} onCheckedChange={setWebSurferEnabled} />
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Behavior Settings</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Auto Memory Update</p>
-                <p className="text-xs text-white/40">Automatically store insights from conversations</p>
-              </div>
-              <Switch checked={autoMemoryUpdate} onCheckedChange={setAutoMemoryUpdate} />
-            </div>
-          </div>
-        </div>
-
-        <SaveButton onSave={onSave} saving={saving} saved={saved} />
-      </div>
-    </div>
-  );
-}
-
-function ModelsSection({ providers, onSave, saving, saved }: SectionProps & { providers: ProviderInfo[] }) {
-  const [defaultProvider, setDefaultProvider] = useState(localStorage.getItem('ng_default_provider') || 'gemini');
-  const [defaultModel, setDefaultModel] = useState(localStorage.getItem('ng_default_model') || 'gemini-2.0-flash');
-
-  const availableModels = providers.find(p => p.id === defaultProvider)?.models || [];
-
-  const handleSaveModels = () => {
-    localStorage.setItem('ng_default_provider', defaultProvider);
-    localStorage.setItem('ng_default_model', defaultModel);
-    onSave();
-  };
-
-  return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-2">AI Models</h1>
-      <p className="text-white/50 mb-8">Configure default models for different tasks</p>
-
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Main Chat Model</h3>
-          
-          <div className="space-y-4">
-            <div>
-              <Label className="text-white/70">Provider</Label>
-              <Select value={defaultProvider} onValueChange={(v) => { setDefaultProvider(v); setDefaultModel(''); }}>
-                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0a0520] border-white/10">
-                  {providers.filter(p => p.is_available).map(p => (
-                    <SelectItem key={p.id} value={p.id} className="text-white">{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-white/70">Model</Label>
-              <Select value={defaultModel} onValueChange={setDefaultModel}>
-                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white">
-                  <SelectValue placeholder="Select a model" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0a0520] border-white/10 max-h-60">
-                  {availableModels.map(m => (
-                    <SelectItem key={m.id} value={m.id} className="text-white">{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Available Providers</h3>
-          
-          <div className="space-y-3">
-            {providers.map(provider => (
-              <div key={provider.id} className="flex items-center justify-between p-3 rounded-xl bg-black/20">
-                <div className="flex items-center gap-3">
-                  <Cpu className="w-4 h-4 text-purple-400" />
-                  <div>
-                    <p className="text-white text-sm font-medium">{provider.name}</p>
-                    <p className="text-xs text-white/40">{provider.models.length} models</p>
-                  </div>
-                </div>
-                <Badge variant={provider.is_available ? 'default' : 'secondary'} className={provider.is_available ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}>
-                  {provider.is_available ? 'Available' : 'Unavailable'}
+      <section className={`${cardClass} p-6`}>
+        <h3 className="mb-4 text-lg font-semibold text-white">Bring Your Own API Keys</h3>
+        <div className="grid gap-4 md:grid-cols-3">
+          {(['gemini', 'groq', 'nvidia'] as const).map((provider) => (
+            <div key={provider} className="rounded-2xl border border-white/15 bg-black/20 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-medium capitalize text-white">{provider}</p>
+                <Badge
+                  className={
+                    settingsSnapshot?.settings.custom_provider_keys?.[provider]?.configured
+                      ? 'border-emerald-400/30 bg-emerald-500/20 text-emerald-200'
+                      : 'border-white/20 bg-white/10 text-white/70'
+                  }
+                >
+                  {settingsSnapshot?.settings.custom_provider_keys?.[provider]?.configured ? 'Configured' : 'Not Set'}
                 </Badge>
               </div>
-            ))}
-          </div>
-        </div>
-
-        <SaveButton onSave={handleSaveModels} saving={saving} saved={saved} />
-      </div>
-    </div>
-  );
-}
-
-function PreferencesSection({ onSave, saving, saved }: SectionProps) {
-  const [darkMode, setDarkMode] = useState(true);
-  const [compactMode, setCompactMode] = useState(false);
-  const [showConfidence, setShowConfidence] = useState(true);
-  const [showReasoning, setShowReasoning] = useState(true);
-
-  return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-2">Preferences</h1>
-      <p className="text-white/50 mb-8">Customize your experience</p>
-
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Appearance</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Dark Mode</p>
-                <p className="text-xs text-white/40">Use dark theme</p>
-              </div>
-              <Switch checked={darkMode} onCheckedChange={setDarkMode} />
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Compact Mode</p>
-                <p className="text-xs text-white/40">Reduce spacing in UI</p>
-              </div>
-              <Switch checked={compactMode} onCheckedChange={setCompactMode} />
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Chat Display</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Show Confidence Scores</p>
-                <p className="text-xs text-white/40">Display confidence on responses</p>
-              </div>
-              <Switch checked={showConfidence} onCheckedChange={setShowConfidence} />
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Show Reasoning Path</p>
-                <p className="text-xs text-white/40">Display reasoning in orchestrator panel</p>
-              </div>
-              <Switch checked={showReasoning} onCheckedChange={setShowReasoning} />
-            </div>
-          </div>
-        </div>
-
-        <SaveButton onSave={onSave} saving={saving} saved={saved} />
-      </div>
-    </div>
-  );
-}
-
-function IntegrationsSection() {
-  const integrations = [
-    { id: 'slack', name: 'Slack', description: 'Send notifications to Slack', connected: false },
-    { id: 'github', name: 'GitHub', description: 'Import from repositories', connected: false },
-    { id: 'notion', name: 'Notion', description: 'Sync with Notion pages', connected: false },
-    { id: 'google', name: 'Google Drive', description: 'Access Google Drive files', connected: false },
-  ];
-
-  return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-2">Integrations</h1>
-      <p className="text-white/50 mb-8">Connect external services</p>
-
-      <div className="space-y-4">
-        {integrations.map(integration => (
-          <div key={integration.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
-                  <Link2 className="w-5 h-5 text-white/60" />
-                </div>
-                <div>
-                  <p className="text-white font-medium">{integration.name}</p>
-                  <p className="text-xs text-white/40">{integration.description}</p>
-                </div>
-              </div>
-              <Button 
-                variant={integration.connected ? 'secondary' : 'outline'}
+              <Input
+                placeholder={`Paste ${provider.toUpperCase()} key`}
+                type="password"
+                value={models.customKeys[provider]}
+                onChange={(e) =>
+                  setModels((prev) => ({
+                    ...prev,
+                    customKeys: { ...prev.customKeys, [provider]: e.target.value },
+                  }))
+                }
+                className={inputClass}
+              />
+              {settingsSnapshot?.settings.custom_provider_keys?.[provider]?.masked ? (
+                <p className="mt-2 text-[11px] text-white/50">
+                  Current: {settingsSnapshot.settings.custom_provider_keys[provider].masked}
+                </p>
+              ) : null}
+              <Button
+                variant="outline"
                 size="sm"
-                className={integration.connected ? 'bg-green-500/20 text-green-300' : 'border-white/20 text-white hover:bg-white/10'}
+                className="mt-3 w-full border-white/25 bg-white/10 text-white hover:bg-white/15"
+                onClick={() => testProvider(provider)}
+                disabled={models.testingProvider === provider}
               >
-                {integration.connected ? 'Connected' : 'Connect'}
+                {models.testingProvider === provider ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Eye className="mr-2 h-3.5 w-3.5" />}
+                Test Provider
               </Button>
+              {models.testStatus[provider] ? (
+                <p className={`mt-2 text-xs ${models.testStatus[provider].ok ? 'text-emerald-300' : 'text-red-300'}`}>
+                  {models.testStatus[provider].message}
+                </p>
+              ) : null}
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={`${cardClass} p-6`}>
+        <h3 className="mb-4 text-lg font-semibold text-white">Available Providers</h3>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {providers.map((provider) => (
+            <div key={provider.id} className="rounded-2xl border border-white/15 bg-black/20 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium text-white">{provider.name}</p>
+                <Badge className={provider.is_available ? 'border-emerald-400/30 bg-emerald-500/20 text-emerald-200' : 'border-red-400/30 bg-red-500/20 text-red-200'}>
+                  {provider.is_available ? 'Live' : 'Server Key Missing'}
+                </Badge>
+              </div>
+              <p className="text-xs text-white/55">{provider.models.length} models available</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <SaveButton state={modelSave} onClick={saveModels} />
     </div>
   );
-}
 
-function SecuritySection({ onSave, saving, saved }: SectionProps) {
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const renderPreferences = () => (
+    <div className="space-y-6">
+      <section className={`${cardClass} p-6`}>
+        <h2 className="mb-1 text-xl font-semibold text-white">Preferences</h2>
+        <p className="mb-5 text-sm text-white/65">Theme, density and chat display preferences.</p>
 
-  return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-2">Security</h1>
-      <p className="text-white/50 mb-8">Manage security settings</p>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-medium text-white">
+                <SunMoon className="h-4 w-4 text-purple-300" />
+                Theme
+              </p>
+              <p className="text-xs text-white/55">Switch between dark, light, and system mode.</p>
+            </div>
+            <Select
+              value={appearance.theme}
+              onValueChange={(value) => setAppearance((prev) => ({ ...prev, theme: value as 'dark' | 'light' | 'system' }))}
+            >
+              <SelectTrigger className="h-8 w-32 bg-white/8 border-white/20 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-white/20 bg-[#100828] text-white">
+                <SelectItem value="dark">Dark</SelectItem>
+                <SelectItem value="light">Light</SelectItem>
+                <SelectItem value="system">System</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Password</h3>
-          
-          <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
             <div>
-              <Label className="text-white/70">Current Password</Label>
-              <Input type="password" className="mt-1.5 bg-white/5 border-white/10 text-white" />
+              <p className="flex items-center gap-2 text-sm font-medium text-white">
+                <SlidersHorizontal className="h-4 w-4 text-purple-300" />
+                Compact Mode
+              </p>
+              <p className="text-xs text-white/55">Reduce paddings and spacing for dense workspace usage.</p>
             </div>
+            <Switch checked={appearance.compactMode} onCheckedChange={(value) => setAppearance((prev) => ({ ...prev, compactMode: value }))} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
             <div>
-              <Label className="text-white/70">New Password</Label>
-              <Input type="password" className="mt-1.5 bg-white/5 border-white/10 text-white" />
+              <p className="text-sm font-medium text-white">Show Confidence Scores</p>
+              <p className="text-xs text-white/55">Display model confidence on assistant responses.</p>
             </div>
+            <Switch checked={appearance.showConfidence} onCheckedChange={(value) => setAppearance((prev) => ({ ...prev, showConfidence: value }))} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
             <div>
-              <Label className="text-white/70">Confirm New Password</Label>
-              <Input type="password" className="mt-1.5 bg-white/5 border-white/10 text-white" />
+              <p className="text-sm font-medium text-white">Show Reasoning Stream</p>
+              <p className="text-xs text-white/55">Show orchestrator steps and reasoning panel in chat.</p>
             </div>
+            <Switch checked={appearance.showReasoning} onCheckedChange={(value) => setAppearance((prev) => ({ ...prev, showReasoning: value }))} />
           </div>
         </div>
+      </section>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Two-Factor Authentication</h3>
-          
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white font-medium">Enable 2FA</p>
-              <p className="text-xs text-white/40">Add extra security to your account</p>
-            </div>
-            <Switch checked={twoFactorEnabled} onCheckedChange={setTwoFactorEnabled} />
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6">
-          <h3 className="text-sm font-semibold text-red-300 mb-4">Danger Zone</h3>
-          <p className="text-sm text-white/60 mb-4">Once you delete your account, there is no going back.</p>
-          <Button variant="destructive" size="sm">Delete Account</Button>
-        </div>
-
-        <SaveButton onSave={onSave} saving={saving} saved={saved} />
-      </div>
+      <SaveButton state={appearanceSave} onClick={saveAppearance} />
     </div>
   );
-}
 
-function SettingsSection({ onSave, saving, saved }: SectionProps) {
-  const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
-
-  return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold text-white mb-2">Settings</h1>
-      <p className="text-white/50 mb-8">Advanced application settings</p>
-
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Data</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Export Data</p>
-                <p className="text-xs text-white/40">Download all your data</p>
-              </div>
-              <Button variant="outline" size="sm" className="border-white/20 text-white hover:bg-white/10">
-                Export
-              </Button>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-medium">Analytics</p>
-                <p className="text-xs text-white/40">Help improve NeuroGraph</p>
-              </div>
-              <Switch checked={analyticsEnabled} onCheckedChange={setAnalyticsEnabled} />
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">API</h3>
-          
-          <div className="space-y-4">
-            <div>
-              <Label className="text-white/70">API Key</Label>
-              <div className="flex gap-2 mt-1.5">
-                <Input 
-                  value="ng_sk_••••••••••••••••" 
-                  readOnly
-                  className="bg-white/5 border-white/10 text-white font-mono text-sm"
-                />
-                <Button variant="outline" size="sm" className="border-white/20 text-white hover:bg-white/10">
-                  Regenerate
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <SaveButton onSave={onSave} saving={saving} saved={saved} />
+  const renderIntegrations = () => (
+    <section className={`${cardClass} p-6`}>
+      <h2 className="mb-1 text-xl font-semibold text-white">Integrations</h2>
+      <p className="text-sm text-white/65">As requested, this section is intentionally left non-functional for now.</p>
+      <div className="mt-4 rounded-2xl border border-white/15 bg-black/20 p-4 text-sm text-white/65">
+        Integrations are excluded from this rollout.
       </div>
+    </section>
+  );
+
+  const renderSecurity = () => (
+    <div className="space-y-6">
+      <section className={`${cardClass} p-6`}>
+        <h2 className="mb-1 text-xl font-semibold text-white">Security</h2>
+        <p className="mb-5 text-sm text-white/65">Update account password.</p>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <Label className="text-white/75">Current Password</Label>
+            <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <Label className="text-white/75">New Password</Label>
+            <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <Label className="text-white/75">Confirm Password</Label>
+            <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} />
+          </div>
+        </div>
+      </section>
+
+      <SaveButton state={securitySave} onClick={saveSecurity} label="Update Password" />
     </div>
   );
-}
 
-function SaveButton({ onSave, saving, saved }: SectionProps) {
+  const renderSettings = () => (
+    <div className="space-y-6">
+      <section className={`${cardClass} p-6`}>
+        <h2 className="mb-1 text-xl font-semibold text-white">Advanced Settings</h2>
+        <p className="mb-5 text-sm text-white/65">Workspace-wide controls, export and sidebar behavior.</p>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-white">Analytics</p>
+              <p className="text-xs text-white/55">Share anonymous performance diagnostics.</p>
+            </div>
+            <Switch checked={analyticsEnabled} onCheckedChange={setAnalyticsEnabled} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-white">Collapse Sidebar by Default</p>
+              <p className="text-xs text-white/55">Applies to all authenticated pages including profile/settings.</p>
+            </div>
+            <Switch checked={sidebarCollapsed} onCheckedChange={setSidebarCollapsed} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl border border-white/15 bg-black/20 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-white">Export Data</p>
+              <p className="text-xs text-white/55">Download profile, settings, conversations, messages, and memories.</p>
+            </div>
+            <Button
+              variant="outline"
+              className="border-white/25 bg-white/10 text-white hover:bg-white/15"
+              onClick={exportData}
+              disabled={exporting}
+            >
+              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              {exporting ? 'Exporting...' : 'Export JSON'}
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <SaveButton state={settingsSave} onClick={saveGeneralSettings} />
+    </div>
+  );
+
+  const content = (() => {
+    if (section === 'profile') return renderProfile();
+    if (section === 'agents') return renderAgents();
+    if (section === 'models') return renderModels();
+    if (section === 'preferences') return renderPreferences();
+    if (section === 'integrations') return renderIntegrations();
+    if (section === 'security') return renderSecurity();
+    return renderSettings();
+  })();
+
   return (
-    <div className="flex justify-end">
-      <Button 
-        onClick={onSave} 
-        disabled={saving}
-        className="bg-purple-500 hover:bg-purple-600 text-white"
-      >
-        {saving ? (
-          <>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Saving...
-          </>
-        ) : saved ? (
-          <>
-            <Check className="w-4 h-4 mr-2" />
-            Saved!
-          </>
-        ) : (
-          <>
-            <Save className="w-4 h-4 mr-2" />
-            Save Changes
-          </>
-        )}
-      </Button>
+    <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
+      <div className="mb-5">
+        <p className="text-xs uppercase tracking-[0.22em] text-white/45">Profile Workspace</p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Profile & Settings</h1>
+        <p className="mt-2 text-sm text-white/60">
+          Unified controls for account, models, agents, appearance, and advanced workspace behavior.
+        </p>
+      </div>
+
+      {globalError ? <div className="mb-4 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{globalError}</div> : null}
+      {content}
     </div>
   );
 }

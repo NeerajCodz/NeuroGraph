@@ -1,9 +1,9 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { Button } from '@/components/ui/button';
 import { Maximize2, ZoomIn, ZoomOut, Radar, Loader2, RefreshCw } from 'lucide-react';
 import { graphApi } from '@/services/api';
-import type { GraphVisualization as GraphVizData, GraphNode as ApiNode, GraphEdge as ApiEdge } from '@/types/api';
+import type { GraphVisualization as GraphVizData, GraphNode as ApiNode } from '@/types/api';
 
 type GraphNode = d3.SimulationNodeDatum & {
   id: string;
@@ -17,6 +17,8 @@ type GraphLink = d3.SimulationLinkDatum<GraphNode> & {
   source: string | GraphNode;
   target: string | GraphNode;
   weight: number;
+  totalWeight: number;
+  connectionCount: number;
   relation: string;
   reason?: string | null;
 };
@@ -61,13 +63,50 @@ export default function GraphVisualization() {
         confidence: n.confidence ?? 0.5,
       }));
 
-      const links: GraphLink[] = (data.edges || []).map((e: ApiEdge) => ({
-        source: e.source,
-        target: e.target,
-        weight: e.confidence || 0.5,
-        relation: e.type,
-        reason: e.reason,
-      }));
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      const aggregated = new Map<
+        string,
+        { source: string; target: string; totalWeight: number; count: number; relations: Set<string>; reasons: string[] }
+      >();
+
+      for (const edge of data.edges || []) {
+        if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
+        const key = `${edge.source}::${edge.target}`;
+        if (!aggregated.has(key)) {
+          aggregated.set(key, {
+            source: edge.source,
+            target: edge.target,
+            totalWeight: 0,
+            count: 0,
+            relations: new Set<string>(),
+            reasons: [],
+          });
+        }
+        const item = aggregated.get(key)!;
+        item.totalWeight += edge.confidence || 0.5;
+        item.count += 1;
+        item.relations.add(edge.type);
+        if (edge.reason) item.reasons.push(edge.reason);
+      }
+
+      const links: GraphLink[] = Array.from(aggregated.values()).map((item) => {
+        const avg = item.totalWeight / Math.max(item.count, 1);
+        const boosted = Math.min(1, avg + Math.min(0.3, (item.count - 1) * 0.08));
+        const relationList = Array.from(item.relations);
+        const relation =
+          relationList.length <= 2
+            ? relationList.join(' + ')
+            : `${relationList.slice(0, 2).join(' + ')} +${relationList.length - 2}`;
+        return {
+          source: item.source,
+          target: item.target,
+          weight: boosted,
+          totalWeight: item.totalWeight,
+          connectionCount: item.count,
+          relation,
+          reason: item.reasons[0] || null,
+        };
+      });
 
       setGraphData({ nodes, links });
     } catch (err) {
@@ -124,21 +163,23 @@ export default function GraphVisualization() {
         return 8 + confidence * 17; // 8 to 25 range
       };
 
-      // Calculate link stroke width based on weight (min 1, max 5)
+      // Calculate link stroke width based on weight and parallel edge count.
       const getLinkWidth = (d: GraphLink) => {
-        return 1 + d.weight * 4; // 1 to 5 range
+        return 1 + d.weight * 3 + Math.min(2.4, (d.connectionCount - 1) * 0.6);
       };
 
       // Calculate link opacity based on weight
       const getLinkOpacity = (d: GraphLink) => {
-        return 0.3 + d.weight * 0.5; // 0.3 to 0.8 range
+        return Math.min(0.92, 0.24 + d.weight * 0.45 + Math.min(0.16, (d.connectionCount - 1) * 0.04));
       };
+
+      const baseLinkColor = 'rgba(210, 176, 255, 0.62)';
 
       const link = linkLayer
         .selectAll('line')
         .data(links)
         .join('line')
-        .attr('stroke', 'rgba(210, 176, 255, 0.62)')
+        .attr('stroke', baseLinkColor)
         .attr('stroke-width', getLinkWidth)
         .attr('stroke-opacity', getLinkOpacity)
         .attr('stroke-linecap', 'round')
@@ -175,6 +216,71 @@ export default function GraphVisualization() {
           setSelectedNode(d);
           setSelectedEdge(null);
         });
+
+      const getNodeId = (v: string | GraphNode) => (typeof v === 'string' ? v : v.id);
+      const adjacency = new Map<string, Set<string>>();
+      for (const l of links) {
+        const s = getNodeId(l.source);
+        const t = getNodeId(l.target);
+        if (!adjacency.has(s)) adjacency.set(s, new Set());
+        if (!adjacency.has(t)) adjacency.set(t, new Set());
+        adjacency.get(s)!.add(t);
+        adjacency.get(t)!.add(s);
+      }
+
+      const resetHighlight = () => {
+        node.attr('opacity', 1);
+        link
+          .attr('stroke', baseLinkColor)
+          .attr('stroke-opacity', (d) => getLinkOpacity(d));
+        linkLabel.attr('opacity', 1);
+      };
+
+      const applyNodeHighlight = (focusId: string) => {
+        const direct = adjacency.get(focusId) || new Set<string>();
+        const secondary = new Set<string>();
+        direct.forEach((id) => {
+          const neighbors = adjacency.get(id) || new Set<string>();
+          neighbors.forEach((n) => {
+            if (n !== focusId && !direct.has(n)) secondary.add(n);
+          });
+        });
+
+        node.attr('opacity', (d) => {
+          if (d.id === focusId) return 1;
+          if (direct.has(d.id)) return 0.95;
+          if (secondary.has(d.id)) return 0.52;
+          return 0.14;
+        });
+
+        link
+          .attr('stroke', (d) => {
+            const s = getNodeId(d.source);
+            const t = getNodeId(d.target);
+            return s === focusId || t === focusId ? 'rgba(123, 255, 163, 0.95)' : baseLinkColor;
+          })
+          .attr('stroke-opacity', (d) => {
+            const s = getNodeId(d.source);
+            const t = getNodeId(d.target);
+            if (s === focusId || t === focusId) return 0.95;
+            if (direct.has(s) || direct.has(t)) return 0.42;
+            if (secondary.has(s) || secondary.has(t)) return 0.2;
+            return 0.06;
+          });
+
+        linkLabel.attr('opacity', (d) => {
+          const s = getNodeId(d.source);
+          const t = getNodeId(d.target);
+          if (s === focusId || t === focusId) return 1;
+          if (direct.has(s) || direct.has(t)) return 0.5;
+          if (secondary.has(s) || secondary.has(t)) return 0.25;
+          return 0.08;
+        });
+      };
+
+      node
+        .on('mouseenter', (_, d) => applyNodeHighlight(d.id))
+        .on('mouseleave', () => resetHighlight());
 
       // Outer glow circle - size based on confidence
       node
@@ -430,6 +536,10 @@ export default function GraphVisualization() {
               <strong className={`${selectedEdge.weight >= 0.7 ? 'text-green-400' : selectedEdge.weight >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
                 {(selectedEdge.weight * 100).toFixed(0)}%
               </strong>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/5 px-2 py-1.5">
+              <span>Parallel links</span>
+              <strong className="text-cyan-200">{selectedEdge.connectionCount}</strong>
             </div>
             {selectedEdge.reason && (
               <div className="rounded-xl bg-cyan-500/10 px-2 py-2 border border-cyan-500/20">

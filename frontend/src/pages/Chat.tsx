@@ -1,9 +1,10 @@
 import { ShinyText } from '@/components/reactbits/ShinyText';
-import { Bot, BrainCircuit, Activity, Settings2, Send, Loader2, ChevronDown, ChevronUp, Cpu, Brain, Users, Globe, Zap } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
-import { chatApi, modelsApi } from '@/services/api';
+import { Bot, BrainCircuit, Activity, Settings2, Loader2, ChevronDown, ChevronUp, Cpu, Brain, Zap, Send } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { chatApi, modelsApi, profileApi } from '@/services/api';
+import type { StreamingStep, StreamingResponse } from '@/services/api';
+import { workspaceApi } from '@/services/api';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -13,6 +14,9 @@ import {
 } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { useLocation, useParams } from 'react-router-dom';
+import { useTheme } from '@/contexts/ThemeContext';
+import { cn } from '@/lib/utils';
 
 interface Message {
   id: string;
@@ -23,6 +27,14 @@ interface Message {
   confidence?: number;
   created_at: string;
   processing_steps?: ProcessingStep[];
+  graph_paths?: GraphPath[];
+}
+
+interface GraphPath {
+  source: string;
+  relationship: string;
+  target: string;
+  reason?: string;
 }
 
 interface ReasoningStep {
@@ -35,15 +47,24 @@ interface MemorySource {
   content: string;
   layer: string;
   score: number;
+  node_id?: string;
+}
+
+interface ProcessingStepDetail {
+  type: 'info' | 'connection' | 'search' | 'node' | 'error' | 'result';
+  content: string;
+  metadata?: Record<string, unknown>;
 }
 
 interface ProcessingStep {
   step_number: number;
   action: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  description: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   result?: string;
   reasoning?: string;
   duration_ms?: number;
+  details?: ProcessingStepDetail[];
 }
 
 interface ModelInfo {
@@ -59,7 +80,110 @@ interface ProviderInfo {
   models: ModelInfo[];
 }
 
+// Processing Accordion Component for completed messages
+function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+  
+  const toggleStep = (stepNum: number) => {
+    setExpandedSteps(prev => {
+      const next = new Set(prev);
+      if (next.has(stepNum)) next.delete(stepNum);
+      else next.add(stepNum);
+      return next;
+    });
+  };
+  
+  const getStepIcon = (action: string) => {
+    if (action.toLowerCase().includes('rag') || action.toLowerCase().includes('memory')) return '🧠';
+    if (action.toLowerCase().includes('graph')) return '🔗';
+    if (action.toLowerCase().includes('web') || action.toLowerCase().includes('search')) return '🌐';
+    if (action.toLowerCase().includes('response') || action.toLowerCase().includes('generat')) return '✨';
+    return '⚡';
+  };
+  
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/5 transition-colors text-left"
+      >
+        <span className="text-xs text-white/60">
+          {steps.length} processing steps completed
+        </span>
+        {expanded ? (
+          <ChevronUp className="w-4 h-4 text-white/40" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-white/40" />
+        )}
+      </button>
+      
+      {expanded && (
+        <div className="px-4 pb-3 space-y-2 border-t border-white/10 pt-3">
+          {steps.map((step) => (
+            <div key={step.step_number} className="space-y-1">
+              <button
+                onClick={() => toggleStep(step.step_number)}
+                className="w-full flex items-center gap-2 text-xs text-left hover:bg-white/5 rounded-lg p-1.5 -ml-1.5 transition-colors"
+              >
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] ${
+                  step.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                  step.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                  'bg-white/10 text-white/40'
+                }`}>
+                  {getStepIcon(step.action)}
+                </span>
+                <span className="text-white/70 flex-1">{step.action}</span>
+                {step.duration_ms && (
+                  <span className="text-white/30">{step.duration_ms}ms</span>
+                )}
+                <ChevronDown className={`w-3 h-3 text-white/30 transition-transform ${expandedSteps.has(step.step_number) ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {expandedSteps.has(step.step_number) && (
+                <div className="ml-7 space-y-1.5 bg-black/20 rounded-lg p-2.5 text-[11px]">
+                  {step.description && (
+                    <p className="text-white/50">{step.description}</p>
+                  )}
+                  {step.reasoning && (
+                    <p className="text-purple-300/70"><span className="text-white/40">Reasoning:</span> {step.reasoning}</p>
+                  )}
+                  {step.details && step.details.map((detail, idx) => (
+                    <div key={idx} className={`flex gap-2 ${
+                      detail.type === 'connection' ? 'text-cyan-300/70' :
+                      detail.type === 'node' ? 'text-green-300/70' :
+                      detail.type === 'search' ? 'text-yellow-300/70' :
+                      detail.type === 'error' ? 'text-red-400/70' :
+                      detail.type === 'result' ? 'text-purple-300/70' :
+                      'text-white/50'
+                    }`}>
+                      <span className="shrink-0">
+                        {detail.type === 'connection' ? '→' :
+                         detail.type === 'node' ? '◉' :
+                         detail.type === 'search' ? '🔍' :
+                         detail.type === 'error' ? '⚠' :
+                         detail.type === 'result' ? '✓' : '•'}
+                      </span>
+                      <span>{detail.content}</span>
+                    </div>
+                  ))}
+                  {step.result && (
+                    <p className="text-green-300/70"><span className="text-white/40">Result:</span> {step.result}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Chat() {
+  const location = useLocation();
+  const { conversationId: routeConversationId } = useParams<{ conversationId: string }>();
+  const { compactMode, showConfidence, showReasoning } = useTheme();
   const [isOrchestratorOpen, setIsOrchestratorOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -79,16 +203,11 @@ export default function Chat() {
   // Chat settings
   const [agentsEnabled, setAgentsEnabled] = useState(true);
   const [memoryLayer, setMemoryLayer] = useState<'personal' | 'workspace' | 'global'>('personal');
-  
-
-  const [includeGlobal, setIncludeGlobal] = useState(true);
+  const [includeGlobal] = useState(true);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  const [workspaces, setWorkspaces] = useState<Array<{ id: string; name: string }>>([]);
+  
   // Processing status
-  const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([]);
-  const [currentStep, setCurrentStep] = useState<string>('');
-  const [isProcessingExpanded, setIsProcessingExpanded] = useState(false);
-
-  // Workspace for chat
   
 
   // Load models on mount
@@ -109,6 +228,54 @@ export default function Chat() {
     };
     loadModels();
   }, []);
+
+  useEffect(() => {
+    const loadProfileDefaults = async () => {
+      try {
+        const profile = await profileApi.getSettings();
+        const preferredProvider = profile.settings.default_provider;
+        const preferredModel = profile.settings.default_model;
+        const preferredLayer = profile.settings.default_memory_layer;
+        const preferredAgentsEnabled = profile.settings.agents_enabled;
+
+        if (preferredProvider) {
+          setSelectedProvider(preferredProvider);
+          localStorage.setItem('ng_default_provider', preferredProvider);
+        }
+        if (preferredModel) {
+          setSelectedModel(preferredModel);
+          localStorage.setItem('ng_default_model', preferredModel);
+        }
+        if (preferredLayer === 'tenant') {
+          setMemoryLayer('workspace');
+          localStorage.setItem('ng_default_layer', 'tenant');
+        } else if (preferredLayer === 'personal' || preferredLayer === 'global') {
+          setMemoryLayer(preferredLayer);
+          localStorage.setItem('ng_default_layer', preferredLayer);
+        }
+        setAgentsEnabled(Boolean(preferredAgentsEnabled));
+      } catch {
+        // Keep local defaults if profile settings are unavailable.
+      }
+    };
+    loadProfileDefaults();
+  }, []);
+
+  useEffect(() => {
+    const loadWorkspaces = async () => {
+      try {
+        const ws = await workspaceApi.list() as Array<{ id: string; name: string }>;
+        const items = Array.isArray(ws) ? ws : [];
+        setWorkspaces(items);
+        if (!selectedWorkspace && items.length > 0) {
+          setSelectedWorkspace(items[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to load workspaces:', err);
+      }
+    };
+    loadWorkspaces();
+  }, [selectedWorkspace]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -131,135 +298,187 @@ export default function Chat() {
     expanded: boolean;
   }>({ isProcessing: false, currentAction: '', steps: [], expanded: false });
 
-  const simulateProcessingSteps = () => {
-    let currentIdx = 0;
-    const steps: ProcessingStep[] = [
-      { step_number: 1, action: 'Analyzing query', status: 'pending' },
-      { step_number: 2, action: 'Searching memory', status: 'pending' },
-      { step_number: 3, action: 'RAG retrieval', status: 'pending' },
-      { step_number: 4, action: 'Building context', status: 'pending' },
-      { step_number: 5, action: 'Generating response', status: 'pending' },
-    ];
-    setProcessingState(prev => ({ ...prev, isProcessing: true, steps, currentAction: steps[0].action }));
-    
-    // Simulate progress
-    const interval = setInterval(() => {
-      setProcessingState(prev => {
-        if (currentIdx >= prev.steps.length) {
-          clearInterval(interval);
-          return { ...prev, isProcessing: false, currentAction: '' };
-        }
-        const updatedSteps = prev.steps.map((s, i) => ({
-          ...s,
-          status: i < currentIdx ? 'completed' as const : i === currentIdx ? 'running' as const : 'pending' as const
-        }));
-        const newAction = prev.steps[currentIdx].action;
-        currentIdx++;
-        return { ...prev, steps: updatedSteps, currentAction: newAction };
-      });
-    }, 600);
-    
-    return () => clearInterval(interval);
-  };
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const workspaceId = params.get('workspace_id');
+    if (workspaceId) {
+      setSelectedWorkspace(workspaceId);
+      setMemoryLayer('workspace');
+    }
+  }, [location.search]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+  useEffect(() => {
+    if (routeConversationId) {
+      setConversationId(routeConversationId);
+    } else {
+      setConversationId(null);
+    }
+  }, [routeConversationId]);
+
+  useEffect(() => {
+    const onNewChat = (event: Event) => {
+      const detail = (event as CustomEvent<{ workspaceId?: string | null }>).detail;
+      const workspaceId = detail?.workspaceId ?? null;
+      setMessages([]);
+      setConversationId(null);
+      setCurrentReasoning(null);
+      setCurrentSources(null);
+      setProcessingState({ isProcessing: false, currentAction: '', steps: [], expanded: false });
+      if (workspaceId) {
+        setSelectedWorkspace(workspaceId);
+        setMemoryLayer('workspace');
+      } else {
+        setSelectedWorkspace(null);
+        setMemoryLayer('personal');
+      }
+    };
+    window.addEventListener('new-chat', onNewChat as EventListener);
+    return () => window.removeEventListener('new-chat', onNewChat as EventListener);
+  }, []);
+
+  // Abort controller for streaming
+  const streamAbortRef = useRef<{ abort: () => void } | null>(null);
+
+  const handleSend = useCallback(async (message: string) => {
+    if (!message.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: input.trim(),
+      content: message.trim(),
       created_at: new Date().toISOString(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput('');
     setIsLoading(true);
     setError('');
     setCurrentReasoning(null);
     setCurrentSources(null);
 
-    // Start processing simulation
-    simulateProcessingSteps();
+    // Initialize processing state with pending steps
+    const initialSteps: ProcessingStep[] = [
+      { 
+        step_number: 1, 
+        action: 'Fetching relevant info from RAG', 
+        description: 'Searching vector database for semantically similar memories',
+        status: 'pending', 
+        reasoning: 'Converting query to embeddings and performing similarity search',
+        details: []
+      },
+      { 
+        step_number: 2, 
+        action: 'Accessing graph memory', 
+        description: 'Traversing knowledge graph for connected concepts',
+        status: 'pending', 
+        reasoning: 'Following relationships between memory nodes',
+        details: []
+      },
+      { 
+        step_number: 3, 
+        action: 'Surfing web', 
+        description: 'Searching for additional context online',
+        status: 'pending', 
+        reasoning: 'Fetching current information if memories are insufficient',
+        details: []
+      },
+      { 
+        step_number: 4, 
+        action: 'Generating response', 
+        description: 'Synthesizing answer from all gathered context',
+        status: 'pending', 
+        reasoning: 'LLM processing with retrieved context and reasoning',
+        details: []
+      },
+    ];
+    setProcessingState({ isProcessing: true, currentAction: initialSteps[0].action, steps: initialSteps, expanded: false });
 
-    try {
-      const response = await chatApi.sendMessage(
-        userMessage.content,
-        conversationId || undefined,
-        memoryLayer,
-        includeGlobal,
-        selectedProvider,
-        selectedModel,
-        agentsEnabled,
-        selectedWorkspace || undefined
-      ) as {
-        id: string;
-        content: string;
-        conversation_id: string;
-        reasoning_path?: ReasoningStep[];
-        sources?: MemorySource[];
-        confidence?: number;
-        created_at: string;
-        processing_steps?: ProcessingStep[];
-      };
+    // Use streaming API for real-time updates
+    const streamController = chatApi.streamMessage(
+      userMessage.content,
+      conversationId || undefined,
+      memoryLayer,
+      includeGlobal,
+      selectedProvider,
+      selectedModel,
+      agentsEnabled,
+      selectedWorkspace || undefined,
+      // onStep: Real-time step updates from backend
+      (step: StreamingStep) => {
+        setProcessingState(prev => {
+          const updatedSteps = prev.steps.map(s => {
+            if (s.step_number === step.step_number) {
+              return {
+                ...s,
+                status: step.status,
+                description: step.description,
+                reasoning: step.reasoning,
+                result: step.result,
+                duration_ms: step.duration_ms,
+                details: step.details || [],
+              };
+            }
+            return s;
+          });
+          return {
+            ...prev,
+            steps: updatedSteps,
+            currentAction: step.status === 'running' ? step.action : prev.currentAction,
+          };
+        });
+      },
+      // onResponse: Final response with all data
+      (response: StreamingResponse) => {
+        const assistantMessage: Message = {
+          id: response.id || `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: response.content,
+          sources: response.sources,
+          confidence: response.confidence,
+          created_at: new Date().toISOString(),
+          processing_steps: response.processing_steps,
+          graph_paths: response.graph_paths,
+        };
 
-      if (response.conversation_id && !conversationId) {
-        setConversationId(response.conversation_id);
+        setMessages((prev) => [...prev, assistantMessage]);
+        setCurrentSources(response.sources || null);
+        
+        // Complete processing
+        setProcessingState(prev => ({ 
+          ...prev, 
+          isProcessing: false, 
+          currentAction: '',
+          steps: response.processing_steps || prev.steps.map(s => ({ ...s, status: 'completed' as const }))
+        }));
+        setIsLoading(false);
+      },
+      // onError
+      (errorMsg: string) => {
+        setError(errorMsg);
+        setProcessingState(prev => ({ 
+          ...prev, 
+          isProcessing: false,
+          currentAction: 'Error',
+          steps: prev.steps.map(s => s.status === 'running' 
+            ? { ...s, status: 'failed' as const, result: errorMsg }
+            : s
+          )
+        }));
+        setIsLoading(false);
+      },
+      // onInit: New conversation created
+      (newConversationId: string) => {
+        if (!conversationId) {
+          setConversationId(newConversationId);
+        }
       }
+    );
 
-      const assistantMessage: Message = {
-        id: response.id || `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response.content,
-        reasoning_path: response.reasoning_path,
-        sources: response.sources,
-        confidence: response.confidence,
-        created_at: response.created_at,
-        processing_steps: response.processing_steps,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-      setCurrentReasoning(response.reasoning_path || null);
-      setCurrentSources(response.sources || null);
-      
-      // Complete all processing steps
-      setProcessingSteps(prev => prev.map(s => ({ ...s, status: 'completed' as const })));
-      setCurrentStep('Complete');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send message');
-      setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
-      setProcessingSteps(prev => prev.map(s => ({ ...s, status: 'failed' as const })));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const formatTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+    streamAbortRef.current = streamController;
+  }, [isLoading, conversationId, memoryLayer, includeGlobal, selectedProvider, selectedModel, agentsEnabled, selectedWorkspace]);
 
   const getAvailableModels = () => {
     const provider = providers.find(p => p.id === selectedProvider);
     return provider?.models || [];
-  };
-
-  const getMemoryIcon = (layer: string) => {
-    switch (layer) {
-      case 'personal': return <Brain className="w-3 h-3" />;
-      case 'workspace': return <Users className="w-3 h-3" />;
-      case 'global': return <Globe className="w-3 h-3" />;
-      default: return <Brain className="w-3 h-3" />;
-    }
   };
 
   const startNewChat = () => {
@@ -267,176 +486,231 @@ export default function Chat() {
     setConversationId(null);
     setCurrentReasoning(null);
     setCurrentSources(null);
-    setProcessingSteps([]);
-    setCurrentStep('');
+    setProcessingState({ isProcessing: false, currentAction: '', steps: [], expanded: false });
   };
 
   return (
-    <div className="absolute inset-0 flex flex-col w-full bg-linear-to-b from-[#050110] via-[#0a0520] to-[#050110]">
-      <section className="flex flex-col flex-1 min-h-0 min-w-0 mx-auto max-w-4xl w-full">
+    <div className="flex flex-col flex-1 min-h-0 w-full">
+      <section className="flex flex-col flex-1 min-h-0 w-full mx-auto max-w-4xl">
         {/* Top Bar */}
-        <div className="flex justify-between items-center px-4 md:px-6 pt-4 mb-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={startNewChat}
-            className="border-white/10 text-white/70 hover:bg-white/10"
-          >
-            + New Chat
-          </Button>
-          <button
-            onClick={() => setIsOrchestratorOpen((prev) => !prev)}
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <Settings2 className="size-3.5" />
-            Orchestrator
-          </button>
+        <div className={cn('flex justify-between items-center px-4 md:px-6 shrink-0 gap-3 border-b border-white/5', compactMode ? 'py-2' : 'py-3')}>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={startNewChat}
+              className="border-white/10 text-white/70 hover:bg-white/10"
+            >
+              + New Chat
+            </Button>
+            <Select
+              value={selectedWorkspace || 'none'}
+              onValueChange={(v) => {
+                if (v === 'none') {
+                  setSelectedWorkspace(null);
+                  return;
+                }
+                setSelectedWorkspace(v);
+                startNewChat();
+              }}
+            >
+              <SelectTrigger className="h-9 w-52 rounded-xl border-white/10 bg-white/5 text-white/80">
+                <SelectValue placeholder="Workspace" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0a0520] border-white/10 z-[100]">
+                <SelectItem value="none" className="text-white/70">No workspace</SelectItem>
+                {workspaces.map((ws) => (
+                  <SelectItem key={ws.id} value={ws.id} className="text-white">
+                    {ws.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {showReasoning ? (
+            <button
+              onClick={() => setIsOrchestratorOpen((prev) => !prev)}
+              className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Settings2 className="size-3.5" />
+              Orchestrator
+            </button>
+          ) : null}
         </div>
 
-        {/* Processing Status Bar */}
-        {isLoading && (
-          <div className="mx-4 md:mx-6 mb-2">
-            <div 
-              className="rounded-xl border border-purple-500/20 bg-purple-500/5 px-4 py-2 cursor-pointer"
-              onClick={() => setIsProcessingExpanded(!isProcessingExpanded)}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
-                  <ShinyText
-                    text={currentStep || 'Processing...'}
-                    speed={2}
-                    className="text-sm font-medium text-purple-200"
-                  />
+        {/* Messages Area - Takes full remaining height */}
+        <div className={cn('flex-1 min-h-0 overflow-y-auto px-4 md:px-6', compactMode ? 'py-2.5' : 'py-4')}>
+          <div className={cn('max-w-3xl mx-auto', compactMode ? 'space-y-4' : 'space-y-6')}>
+            {messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
+                <div className="mb-6 p-5 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30">
+                  <Bot className="w-10 h-10 text-purple-300" />
                 </div>
-                {isProcessingExpanded ? (
-                  <ChevronUp className="w-4 h-4 text-white/40" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-white/40" />
-                )}
+                <h2 className="text-2xl font-bold text-white mb-3">Start a Conversation</h2>
+                <p className="text-white/60 max-w-md">
+                  Ask anything about your knowledge graph, traverse memory, or explore relationships.
+                </p>
               </div>
-              
-              {isProcessingExpanded && (
-                <div className="mt-3 space-y-2 border-t border-purple-500/10 pt-3">
-                  {processingSteps.map((step) => (
-                    <div key={step.step_number} className="flex items-center gap-2 text-xs">
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                        step.status === 'completed' ? 'bg-green-500/20 text-green-400' :
-                        step.status === 'running' ? 'bg-purple-500/20 text-purple-400' :
-                        step.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-                        'bg-white/5 text-white/30'
-                      }`}>
-                        {step.status === 'running' ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : step.status === 'completed' ? (
-                          '✓'
-                        ) : step.status === 'failed' ? (
-                          '✗'
-                        ) : (
-                          step.step_number
-                        )}
-                      </span>
-                      <span className={step.status === 'running' ? 'text-purple-200' : 'text-white/50'}>
-                        {step.action}
-                      </span>
-                      {step.duration_ms && (
-                        <span className="text-white/30 ml-auto">{step.duration_ms}ms</span>
+            ) : (
+              <>
+                {messages.map((message) => (
+                  <div key={message.id} className="space-y-4">
+                    {/* User Message */}
+                    {message.role === 'user' && (
+                      <div className="flex gap-3 items-start">
+                        <div className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
+                          <span className="text-white text-sm font-semibold">Y</span>
+                        </div>
+                        <div className="flex-1 min-w-0 pt-1">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/45 mb-1">You</p>
+                          <div className="text-[15px] leading-7 text-white">
+                            {message.content}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Assistant Message */}
+                    {message.role === 'assistant' && (
+                      <div className="flex gap-3 items-start">
+                        <div className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                          <Bot className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0 pt-1 space-y-3">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/45">NeuroGraph</p>
+                           
+                          {/* Processing Steps Accordion (shown on completed messages) */}
+                          {showReasoning && message.processing_steps && message.processing_steps.length > 0 && (
+                            <ProcessingAccordion steps={message.processing_steps} />
+                          )}
+                          
+                          {/* Response */}
+                          <div className="text-[15px] leading-7 text-white/90">
+                            {message.content}
+                          </div>
+                          
+                          {/* Metadata */}
+                          {showConfidence && message.confidence && (
+                            <div className="text-xs text-white/40">
+                              Confidence: {(message.confidence * 100).toFixed(0)}%
+                              {message.sources && message.sources.length > 0 && (
+                                <span className="ml-3">{message.sources.length} sources</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                
+                {/* Live Processing State (while loading) */}
+                {isLoading && (
+                  <div className="flex gap-3 items-start">
+                    <div className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                      <Bot className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0 pt-1 space-y-3">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/45">NeuroGraph</p>
+                      
+                      {/* Live Processing Accordion */}
+                      {showReasoning ? (
+                        <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 overflow-hidden">
+                          <button
+                            onClick={() => setProcessingState(p => ({ ...p, expanded: !p.expanded }))}
+                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-purple-500/5 transition-colors"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                              <ShinyText
+                                text={processingState.currentAction || 'Processing...'}
+                                speed={2}
+                                className="text-sm font-medium"
+                              />
+                            </div>
+                            {processingState.expanded ? (
+                              <ChevronUp className="w-4 h-4 text-white/50" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-white/50" />
+                            )}
+                          </button>
+                          
+                          {processingState.expanded && (
+                            <div className="px-4 pb-4 space-y-3 border-t border-purple-500/20 pt-3">
+                              {processingState.steps.map((step) => (
+                                <div key={step.step_number} className="space-y-1.5">
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                                      step.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                                      step.status === 'running' ? 'bg-purple-500/30 text-purple-300' :
+                                      step.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                                      'bg-white/5 text-white/30'
+                                    }`}>
+                                      {step.status === 'running' ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : step.status === 'completed' ? (
+                                        '✓'
+                                      ) : step.status === 'failed' ? (
+                                        '✗'
+                                      ) : (
+                                        step.step_number
+                                      )}
+                                    </span>
+                                    <span className={step.status === 'running' ? 'text-purple-200 font-medium' : step.status === 'completed' ? 'text-white/70' : 'text-white/40'}>
+                                      {step.action}
+                                    </span>
+                                    {step.duration_ms && (
+                                      <span className="text-white/30 ml-auto">{step.duration_ms}ms</span>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Step description and details */}
+                                  {(step.status === 'running' || step.status === 'completed') && (
+                                    <div className="ml-7 space-y-1 text-[11px]">
+                                      {step.description && (
+                                        <p className="text-white/50">{step.description}</p>
+                                      )}
+                                      {step.details && step.details.map((detail, idx) => (
+                                        <div key={idx} className={`flex gap-2 ${
+                                          detail.type === 'connection' ? 'text-cyan-300/70' :
+                                          detail.type === 'node' ? 'text-green-300/70' :
+                                          detail.type === 'search' ? 'text-yellow-300/70' :
+                                          detail.type === 'error' ? 'text-red-400/70' :
+                                          detail.type === 'result' ? 'text-purple-300/70' :
+                                          'text-white/50'
+                                        }`}>
+                                          <span className="shrink-0">
+                                            {detail.type === 'connection' ? '→' :
+                                             detail.type === 'node' ? '◉' :
+                                             detail.type === 'search' ? '🔍' :
+                                             detail.type === 'error' ? '⚠' :
+                                             detail.type === 'result' ? '✓' : '•'}
+                                          </span>
+                                          <span>{detail.content}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-3 text-sm text-purple-100/85">
+                          <div className="flex items-center gap-3">
+                            <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
+                            <span>{processingState.currentAction || 'Processing...'}</span>
+                          </div>
+                        </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Messages */}
-        <div className="scrollbar-thin flex-1 min-h-0 overflow-y-auto px-4 md:px-6">
-          {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center px-4">
-              <div className="mb-6 p-4 rounded-full bg-linear-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30">
-                <BrainCircuit className="w-12 h-12 text-purple-400" />
-              </div>
-              <h2 className="text-2xl font-bold text-white mb-3">Welcome to NeuroGraph</h2>
-              <p className="text-white/60 max-w-md text-sm leading-relaxed">
-                Ask me anything. I'll use your knowledge graph and memory to provide context-aware answers with explainable reasoning.
-              </p>
-              <div className="flex gap-2 mt-4 text-xs text-white/40">
-                <Badge variant="outline" className="border-purple-500/30">
-                  <Cpu className="w-3 h-3 mr-1" />
-                  {selectedProvider} / {selectedModel}
-                </Badge>
-                <Badge variant="outline" className="border-blue-500/30">
-                  {getMemoryIcon(memoryLayer)}
-                  <span className="ml-1">{memoryLayer} memory</span>
-                </Badge>
-                {agentsEnabled && (
-                  <Badge variant="outline" className="border-green-500/30">
-                    <Zap className="w-3 h-3 mr-1" />
-                    Agents
-                  </Badge>
+                  </div>
                 )}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6 pb-4 pt-2">
-              {messages.map((message) => (
-                <div key={message.id} className="group">
-                  {message.role === 'assistant' && (
-                    <div className="flex gap-4 items-start">
-                      <div className="shrink-0 w-7 h-7 rounded-lg bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
-                        <Bot className="w-4 h-4 text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[15px] leading-7 text-white/90 whitespace-pre-wrap">
-                          {message.content}
-                        </div>
-                        {message.confidence && (
-                          <div className="flex items-center gap-2 mt-2 text-xs text-white/40">
-                            <span>{formatTime(message.created_at)}</span>
-                            <span>•</span>
-                            <span className="text-purple-400">
-                              {(message.confidence * 100).toFixed(0)}% confidence
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {message.role === 'user' && (
-                    <div className="flex gap-4 items-start">
-                      <div className="shrink-0 w-7 h-7 rounded-lg bg-linear-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg">
-                        <span className="text-white text-xs font-semibold">Y</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[15px] leading-7 text-white whitespace-pre-wrap">
-                          {message.content}
-                        </div>
-                        <div className="text-xs text-white/40 mt-2">
-                          {formatTime(message.created_at)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex gap-4 items-start">
-                  <div className="shrink-0 w-7 h-7 rounded-lg bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
-                    <Bot className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 text-white/50 text-sm">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <ShinyText text="Thinking..." speed={2} className="text-purple-200" />
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
+              </>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
 
         {/* Error */}
@@ -447,98 +721,64 @@ export default function Chat() {
         )}
 
         {/* Input Area */}
-        <div className="shrink-0 px-4 md:px-6 pb-4 pt-2">
-
-          {/* Text Input & Output Panel */}
-          <div className="flex flex-col gap-2 relative max-w-full">
+        <div className={cn('shrink-0 px-4 md:px-6 border-t border-white/5', compactMode ? 'pb-3 pt-2' : 'pb-4 pt-3')}>
+          <div className="max-w-3xl mx-auto">
             <div className="relative">
               <textarea
                 ref={inputRef}
                 value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (input.trim() && !isLoading) {
+                      handleSend(input.trim());
+                      setInput('');
+                    }
+                  }
                 }}
-                onKeyDown={handleKeyDown}
                 placeholder="Message NeuroGraph..."
                 rows={1}
-                className="w-full resize-none rounded-3xl border border-white/10 bg-white/5 px-5 py-4 pr-14 text-[15px] text-white placeholder:text-white/40 focus:border-white/20 focus:outline-none focus:bg-white/[0.07] disabled:opacity-50 transition-all max-h-50 shadow-lg shadow-black/20"
                 disabled={isLoading}
-                style={{ minHeight: '52px' }}
+                className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 px-4 py-3 pr-12 text-[15px] text-white placeholder:text-white/40 focus:border-purple-500/50 focus:outline-none focus:ring-1 focus:ring-purple-500/20 disabled:opacity-50 transition-all"
               />
               <button
-                onClick={handleSend}
-                disabled={isLoading || !input.trim()}
-                className="absolute right-3 bottom-3 p-2.5 rounded-xl bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                onClick={() => {
+                  if (input.trim() && !isLoading) {
+                    handleSend(input.trim());
+                    setInput('');
+                  }
+                }}
+                disabled={!input.trim() || isLoading}
+                className="absolute right-2 bottom-2 p-2 rounded-xl bg-purple-500/80 text-white hover:bg-purple-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
                 {isLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Send className="w-5 h-5" />
+                  <Send className="w-4 h-4" />
                 )}
               </button>
             </div>
 
-            {/* Processing Dropdown Indicator */}
-            {processingState.isProcessing && (
-              <div className="relative z-10 w-full mt-2">
-                <div 
-                  onClick={() => setProcessingState(p => ({ ...p, expanded: !p.expanded }))}
-                  className="flex items-center justify-between px-4 py-2 rounded-2xl border border-purple-500/20 bg-purple-500/10 cursor-pointer hover:bg-purple-500/20 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
-                    <ShinyText
-                      text={`${processingState.currentAction}...`}
-                      speed={3}
-                      className="text-sm font-medium text-purple-200"        
-                    />
-                  </div>
-                  {processingState.expanded ? <ChevronUp className="w-4 h-4 text-white/50" /> : <ChevronDown className="w-4 h-4 text-white/50" />}
-                </div>
-                
-                {processingState.expanded && (
-                  <div className="absolute top-12 left-0 right-0 mt-2 p-4 rounded-2xl border border-white/10 bg-[#0c0618] shadow-2xl overflow-hidden">
-                    <div className="space-y-3">
-                      {processingState.steps.map((step, i) => (
-                        <div key={i} className="flex flex-col gap-1 text-xs">
-                          <div className="flex items-center gap-2">
-                            {step.status === 'completed' ? (
-                              <div className="w-4 h-4 rounded-full bg-green-500/20 flex items-center justify-center">
-                                <div className="w-2 h-2 rounded-full bg-green-500" />
-                              </div>
-                            ) : step.status === 'running' ? (
-                              <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
-                            ) : (
-                              <div className="w-4 h-4 rounded-full border border-white/20" />
-                            )}
-                            <span className={step.status === 'completed' ? 'text-white' : step.status === 'running' ? 'text-purple-200 font-medium' : 'text-white/40'}>
-                              {step.action}
-                            </span>
-                          </div>
-                          {step.result && step.status === 'completed' && (
-                            <div className="ml-6 p-2 rounded-lg bg-white/5 text-white/60 border border-white/5">
-                              {step.result}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Chat Settings Row (Below Textbox) */}
-            <div className="flex flex-wrap gap-4 mt-2 px-2 items-center">
+            {/* Chat Settings Row */}
+            <div className="flex flex-wrap gap-3 mt-3 items-center">
               {/* Model Selector */}
               <div className="flex items-center gap-2">
-                <Select value={selectedProvider} onValueChange={(v) => { setSelectedProvider(v); setSelectedModel(getAvailableModels()[0]?.id || ''); }}>
-                  <SelectTrigger className="w-24 h-8 text-xs bg-transparent border-none text-white/70 hover:text-white rounded-full">
-                    <SelectValue />
+                <Select 
+                  value={selectedProvider} 
+                  onValueChange={(newProvider) => { 
+                    setSelectedProvider(newProvider);
+                    // Find models for the new provider
+                    const newProviderData = providers.find(p => p.id === newProvider);
+                    if (newProviderData?.models?.length) {
+                      setSelectedModel(newProviderData.models[0].id);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-28 h-8 text-xs bg-white/5 border-white/10 text-white/70 hover:text-white rounded-lg">
+                    <SelectValue placeholder="Provider" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0a0520] border-white/10">        
+                  <SelectContent className="bg-[#0a0520] border-white/10 z-[100]">        
                     {providers.filter(p => p.is_available).map(p => (
                       <SelectItem key={p.id} value={p.id} className="text-white text-xs">
                         {p.name}
@@ -547,11 +787,11 @@ export default function Chat() {
                   </SelectContent>
                 </Select>
                 <Select value={selectedModel} onValueChange={setSelectedModel}>   
-                  <SelectTrigger className="w-36 h-8 text-xs bg-transparent border-none text-white/70 hover:text-white rounded-full">
+                  <SelectTrigger className="w-40 h-8 text-xs bg-white/5 border-white/10 text-white/70 hover:text-white rounded-lg">
                     <Cpu className="w-3 h-3 mr-1" />
-                    <SelectValue />
+                    <SelectValue placeholder="Model" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0a0520] border-white/10 max-h-60">
+                  <SelectContent className="bg-[#0a0520] border-white/10 max-h-60 z-[100]">
                     {getAvailableModels().map(m => (
                       <SelectItem key={m.id} value={m.id} className="text-white text-xs">
                         {m.name}
@@ -561,32 +801,42 @@ export default function Chat() {
                 </Select>
               </div>
 
-              <div className="h-4 w-px bg-white/10 mx-1"></div>
-              {/* Memory Layer */}
-              <div className="flex items-center gap-2">
-                <Select value={memoryLayer} onValueChange={(v) => setMemoryLayer(v as 'personal' | 'workspace' | 'global')}>
-                  <SelectTrigger className="w-32 h-8 text-xs bg-transparent border-none text-white/70 hover:text-white rounded-full">
-                    <Brain className="w-3 h-3 mr-1" />
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#0a0520] border-white/10">        
-                    <SelectItem value="personal" className="text-white text-xs">  
-                      <span className="flex items-center gap-2">Personal</span>
-                    </SelectItem>
-                    <SelectItem value="workspace" className="text-white text-xs"> 
-                      <span className="flex items-center gap-2">Workspace</span>
-                    </SelectItem>
-                    <SelectItem value="global" className="text-white text-xs">    
-                      <span className="flex items-center gap-2">Global</span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="h-4 w-px bg-white/10"></div>
               
-              <div className="h-4 w-px bg-white/10 mx-1 ml-auto"></div>
+              {/* Memory Layer */}
+              <Select
+                value={memoryLayer}
+                onValueChange={(v) => {
+                  const nextLayer = v as 'personal' | 'workspace' | 'global';
+                  setMemoryLayer(nextLayer);
+                  if (nextLayer !== 'workspace') {
+                    setSelectedWorkspace(null);
+                  } else if (!selectedWorkspace && workspaces.length > 0) {
+                    setSelectedWorkspace(workspaces[0].id);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-32 h-8 text-xs bg-white/5 border-white/10 text-white/70 hover:text-white rounded-lg">
+                  <Brain className="w-3 h-3 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0a0520] border-white/10 z-[100]">        
+                  <SelectItem value="personal" className="text-white text-xs">  
+                    <span className="flex items-center gap-2">Personal</span>
+                  </SelectItem>
+                  <SelectItem value="workspace" className="text-white text-xs"> 
+                    <span className="flex items-center gap-2">Workspace</span>
+                  </SelectItem>
+                  <SelectItem value="global" className="text-white text-xs">    
+                    <span className="flex items-center gap-2">Global</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              
+              <div className="h-4 w-px bg-white/10 ml-auto"></div>
 
               {/* Agents Toggle */}
-              <div className="flex items-center gap-2 ">
+              <div className="flex items-center gap-2">
                 <Label htmlFor="agents" className="text-xs text-white/70 cursor-pointer flex items-center gap-1.5 hover:text-white">
                   <Zap className={`w-3 h-3 ${agentsEnabled ? "text-purple-400" : "text-white/40"}`} />
                   Agents
@@ -601,14 +851,14 @@ export default function Chat() {
             </div>
           </div>
           
-          <p className="text-center text-[10px] text-white/30 mt-4 font-light">
+          <p className="text-center text-[10px] text-white/30 mt-3 font-light">
             NeuroGraph can make mistakes. Verify important information.
           </p>
         </div>
       </section>
 
       {/* Orchestrator Panel */}
-      {isOrchestratorOpen && (
+      {showReasoning && isOrchestratorOpen && (
         <aside className="absolute right-0 top-0 bottom-0 z-10 w-80 border-l border-white/10 bg-[#090512]/95 backdrop-blur-md shadow-2xl">
           <div className="flex h-full w-full flex-col">
             <div className="flex items-center justify-between border-b border-white/10 p-4">

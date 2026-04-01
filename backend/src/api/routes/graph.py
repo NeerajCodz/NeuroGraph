@@ -8,9 +8,18 @@ from pydantic import BaseModel, Field
 
 from src.api.dependencies.auth import get_current_user_id
 from src.core.logging import get_logger
+from src.db.neo4j import get_neo4j_driver
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+def _get_neo4j_from_request(request: Request):
+    """Resolve Neo4j driver from app state with lazy fallback."""
+    neo4j = getattr(request.app.state, "neo4j", None)
+    if neo4j is not None:
+        return neo4j
+    return get_neo4j_driver()
 
 
 class EntityCreate(BaseModel):
@@ -107,7 +116,7 @@ async def search_entities(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[EntityResponse]:
     """Search entities in the graph."""
-    neo4j = request.app.state.neo4j
+    neo4j = _get_neo4j_from_request(request)
     
     # Build query based on filters
     where_clauses = []
@@ -204,7 +213,7 @@ async def get_relationships(
     types: list[str] | None = Query(default=None),
 ) -> list[RelationshipResponse]:
     """Get relationships for an entity."""
-    neo4j = request.app.state.neo4j
+    neo4j = _get_neo4j_from_request(request)
     
     # Build direction clause
     if direction == "outgoing":
@@ -275,28 +284,38 @@ async def visualize_graph(
     
     Returns nodes and edges suitable for D3.js rendering.
     """
-    neo4j = request.app.state.neo4j
+    neo4j = _get_neo4j_from_request(request)
     
-    # Get all entities with relationships
+    # Select a bounded node set first, then only include edges that stay within that set.
+    # This prevents invalid edge references that can break force-graph rendering.
     query = """
     MATCH (n:Entity)
+    WITH n
+    ORDER BY coalesce(n.confidence, 0.5) DESC, n.name ASC
+    LIMIT $max_nodes
+    WITH collect(n) AS selected_nodes
+    UNWIND selected_nodes AS n
     OPTIONAL MATCH (n)-[r]-(m:Entity)
-    WITH collect(DISTINCT {
+    WHERE m IN selected_nodes
+    WITH selected_nodes,
+         collect(DISTINCT {
+            source: coalesce(startNode(r).id, startNode(r).name),
+            target: coalesce(endNode(r).id, endNode(r).name),
+            type: type(r),
+            reason: r.reason,
+            confidence: coalesce(r.weight, r.confidence, 1.0)
+         }) AS edges
+    RETURN
+      [n IN selected_nodes | {
         id: coalesce(n.id, n.name),
         name: n.name,
-        type: n.type,
-        layer: coalesce(n.layer, 'global')
-    }) as nodes,
-    collect(DISTINCT {
-        source: coalesce(startNode(r).id, startNode(r).name),
-        target: coalesce(endNode(r).id, endNode(r).name),
-        type: type(r),
-        reason: r.reason,
-        confidence: coalesce(r.confidence, 1.0)
-    }) as edges
-    RETURN nodes[$skip..$max_nodes] as nodes, [e in edges WHERE e.source IS NOT NULL][$skip..$max_edges] as edges
+        type: coalesce(n.type, 'Entity'),
+        layer: coalesce(n.layer, 'global'),
+        confidence: coalesce(n.confidence, 0.5)
+      }] AS nodes,
+      [e IN edges WHERE e.source IS NOT NULL AND e.target IS NOT NULL] AS edges
     """
-    params = {"max_nodes": max_nodes, "max_edges": max_nodes * 2, "skip": 0}
+    params = {"max_nodes": max_nodes}
     
     records = await neo4j.execute_read(query, params)
     
@@ -338,7 +357,7 @@ async def get_centrality(
     entity_ids: list[str] = Query(default=[]),
 ) -> dict[str, int]:
     """Get degree centrality for entities."""
-    neo4j = request.app.state.neo4j
+    neo4j = _get_neo4j_from_request(request)
     
     if entity_ids:
         query = """

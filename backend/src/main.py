@@ -97,8 +97,10 @@ def create_app() -> FastAPI:
         neo4j_healthy = await get_neo4j_driver().health_check()
         postgres_healthy = await get_postgres_driver().health_check()
         redis_healthy = await get_redis_driver().health_check()
+        ready = neo4j_healthy and postgres_healthy and redis_healthy
         
         return {
+            "ready": ready,
             "neo4j": neo4j_healthy,
             "postgres": postgres_healthy,
             "redis": redis_healthy,

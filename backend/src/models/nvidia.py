@@ -1,9 +1,12 @@
 """NVIDIA API client for LLM operations via build.nvidia.com."""
 
 import asyncio
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
-from openai import AsyncOpenAI
+try:
+    from openai import AsyncOpenAI
+except ImportError:  # pragma: no cover - optional dependency in some envs
+    AsyncOpenAI = None  # type: ignore[assignment]
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from src.core.config import get_settings
@@ -70,7 +73,7 @@ class NvidiaClient:
     def __init__(self) -> None:
         self._settings = get_settings()
         api_key = self._settings.nvidia_api_key
-        if api_key:
+        if api_key and AsyncOpenAI is not None:
             self._client = AsyncOpenAI(
                 base_url=self._settings.nvidia_base_url,
                 api_key=api_key.get_secret_value(),
@@ -78,6 +81,19 @@ class NvidiaClient:
         else:
             self._client = None
         self._last_call_time = 0.0
+
+    def _build_client(self, api_key: str | None = None) -> Any:
+        """Get client instance, optionally with a per-request API key override."""
+        if api_key:
+            if AsyncOpenAI is None:
+                raise LLMError(
+                    "NVIDIA provider requires 'openai' package. Install it in backend environment."
+                )
+            return AsyncOpenAI(
+                base_url=self._settings.nvidia_base_url,
+                api_key=api_key,
+            )
+        return self._client
 
     @property
     def is_available(self) -> bool:
@@ -106,6 +122,7 @@ class NvidiaClient:
         model: str = "devstral-2-123b",
         temperature: float | None = None,
         max_tokens: int | None = None,
+        api_key: str | None = None,
     ) -> str:
         """Generate text completion using NVIDIA models.
         
@@ -119,7 +136,8 @@ class NvidiaClient:
         Returns:
             Generated text response
         """
-        if not self.is_available:
+        client = self._build_client(api_key)
+        if client is None:
             raise LLMError("NVIDIA API not configured. Set NVIDIA_API_KEY.")
         
         model_config = NVIDIA_MODELS.get(model)
@@ -150,7 +168,7 @@ class NvidiaClient:
             if "extra_body" in model_config:
                 kwargs["extra_body"] = model_config["extra_body"]
             
-            response = await self._client.chat.completions.create(**kwargs)
+            response = await client.chat.completions.create(**kwargs)
             
             result = response.choices[0].message.content or ""
             
@@ -176,13 +194,15 @@ class NvidiaClient:
         model: str = "devstral-2-123b",
         temperature: float | None = None,
         max_tokens: int | None = None,
+        api_key: str | None = None,
     ) -> AsyncIterator[tuple[str | None, str | None]]:
         """Generate text completion with streaming.
         
         Yields:
             Tuples of (reasoning_content, content) - one may be None
         """
-        if not self.is_available:
+        client = self._build_client(api_key)
+        if client is None:
             raise LLMError("NVIDIA API not configured. Set NVIDIA_API_KEY.")
         
         model_config = NVIDIA_MODELS.get(model)
@@ -213,7 +233,7 @@ class NvidiaClient:
             if "extra_body" in model_config:
                 kwargs["extra_body"] = model_config["extra_body"]
             
-            stream = await self._client.chat.completions.create(**kwargs)
+            stream = await client.chat.completions.create(**kwargs)
             
             async for chunk in stream:
                 if not chunk.choices:
