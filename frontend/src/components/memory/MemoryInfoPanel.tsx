@@ -1,5 +1,13 @@
-import { X, Brain, Clock, Lock, Unlock, Hash, Layers, Database } from 'lucide-react';
+import { X, Brain, Clock, Lock, Unlock, Hash, Layers, Database, MessageSquare, Mail, FileText, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Integration source display info
+const INTEGRATION_INFO: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+  slack: { icon: <MessageSquare className="w-3 h-3" />, label: 'Slack', color: 'text-[#E01E5A]' },
+  gmail: { icon: <Mail className="w-3 h-3" />, label: 'Gmail', color: 'text-[#EA4335]' },
+  notion: { icon: <FileText className="w-3 h-3" />, label: 'Notion', color: 'text-white/80' },
+  github: { icon: <Link2 className="w-3 h-3" />, label: 'GitHub', color: 'text-white/80' },
+};
 
 interface MemoryDetail {
   id: string;
@@ -35,6 +43,11 @@ export default function MemoryInfoPanel({ memory, isLoading, onClose }: InfoPane
     });
   };
 
+  // Get integration source from metadata
+  const integrationSource = memory?.metadata?.source as string | undefined;
+  const integrationInfo = integrationSource ? INTEGRATION_INFO[integrationSource] : null;
+  const eventType = memory?.metadata?.event_type as string | undefined;
+
   return (
     <div
       className={cn(
@@ -63,6 +76,21 @@ export default function MemoryInfoPanel({ memory, isLoading, onClose }: InfoPane
         </div>
       ) : memory ? (
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Integration source badge */}
+          {integrationInfo && (
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 border border-white/10">
+              <div className={cn('flex items-center gap-1.5', integrationInfo.color)}>
+                {integrationInfo.icon}
+                <span className="text-sm font-medium">{integrationInfo.label}</span>
+              </div>
+              {eventType && (
+                <span className="text-xs text-white/40 ml-auto">
+                  {eventType.replace(/_/g, ' ')}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Content preview */}
           <div>
             <p className="text-[10px] uppercase tracking-wider text-white/40 mb-2">Content</p>
@@ -118,6 +146,22 @@ export default function MemoryInfoPanel({ memory, isLoading, onClose }: InfoPane
             </div>
           </div>
 
+          {/* Source info (if from integration) */}
+          {integrationSource && (
+            <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+              <div className="flex items-center gap-1.5 text-white/40 mb-1">
+                <Link2 className="w-3 h-3" />
+                <span className="text-[10px] uppercase tracking-wider">Source</span>
+              </div>
+              <p className="text-sm text-white/90 capitalize">{integrationSource}</p>
+              {memory.metadata?.event_id ? (
+                <p className="text-[10px] text-white/40 mt-1 font-mono truncate">
+                  Event: {String(memory.metadata.event_id)}
+                </p>
+              ) : null}
+            </div>
+          )}
+
           {/* Timestamps */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-white/50 text-xs">
@@ -138,6 +182,26 @@ export default function MemoryInfoPanel({ memory, isLoading, onClose }: InfoPane
               </p>
               <div className="p-3 rounded-xl bg-black/30 border border-white/10 font-mono text-[10px] text-white/60 overflow-x-auto">
                 [{memory.embedding_preview.map(v => v.toFixed(4)).join(', ')}...]
+              </div>
+            </div>
+          )}
+
+          {/* Additional metadata */}
+          {Object.keys(memory.metadata).filter(k => !['source', 'event_type', 'event_id'].includes(k)).length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/40 mb-2">
+                Additional Metadata
+              </p>
+              <div className="p-3 rounded-xl bg-black/30 border border-white/10 font-mono text-[10px] text-white/60 overflow-x-auto">
+                <pre className="whitespace-pre-wrap">
+                  {JSON.stringify(
+                    Object.fromEntries(
+                      Object.entries(memory.metadata).filter(([k]) => !['source', 'event_type', 'event_id'].includes(k))
+                    ),
+                    null,
+                    2
+                  )}
+                </pre>
               </div>
             </div>
           )}

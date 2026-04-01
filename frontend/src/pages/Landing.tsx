@@ -2,16 +2,16 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BlurText } from '@/components/reactbits/BlurText';
 import ScrollFloat from '@/components/text/ScrollFloat';
-import GridMotion from '@/components/landing/GridMotion';
 import Hyperspeed from '@/components/landing/Hyperspeed';
 import BorderGlow from '@/components/BorderGlow';
 import ShapeBlur from '@/components/ShapeBlur';
 import Iridescence from '@/components/Iridescence';
 import GradientBlinds from '@/components/GradientBlinds';
+import ArchitectureFlow from '@/components/landing/ArchitectureFlow';
 import { ArrowRight, Network, Sparkles, DatabaseZap } from 'lucide-react';
 
 // Reusable scroll reveal wrapper
-const ScrollReveal = ({ children, className = '', delay = 0 }: any) => (
+const ScrollReveal = ({ children, className = '', delay = 0 }: { children: React.ReactNode, className?: string, delay?: number }) => (
   <motion.div
     initial={{ opacity: 0, y: 60 }}
     whileInView={{ opacity: 1, y: 0 }}
@@ -39,19 +39,19 @@ export default function Landing() {
               lanesPerRoad: 4,
               fov: 90,
               fovSpeedUp: 150,
-              speedUp: 2,
-              carLightsFade: 0.4,
-              totalSideLightSticks: 20,
-              lightPairsPerRoadWay: 40,
+                speedUp: 1,
+              carLightsFade: 0.6,
+              totalSideLightSticks: 10,
+              lightPairsPerRoadWay: 20,
               colors: {
-                roadColor: 0x080808,
-                islandColor: 0x0a0a0a,
-                background: 0x000000,
-                shoulderLines: 0x131318,
-                brokenLines: 0x131318,
-                leftCars: [0x9333ea, 0x7c3aed, 0xa855f7],
-                rightCars: [0x06b6d4, 0x0891b2, 0x22d3ee],
-                sticks: 0x7c3aed
+                roadColor: 0x050110,
+                islandColor: 0x070215,
+                background: 0x050110,
+                shoulderLines: 0x0b0520,
+                brokenLines: 0x0b0520,
+                leftCars: [0x5227ff, 0x8a2be2, 0x9400d3],
+                rightCars: [0x7b2cbf, 0x6a0dad, 0x4b0082],
+                sticks: 0x5a189a
               }
             }}
           />
@@ -205,6 +205,23 @@ export default function Landing() {
         </div>
       </section>
 
+      <section id="data" className="min-h-screen py-20 bg-[#050110] flex flex-col items-center justify-center relative border-t border-white/5">
+        <ScrollReveal className="max-w-5xl w-full px-4">
+          <p className="text-center mb-4 text-sm font-semibold uppercase tracking-[0.3em] text-purple-400">Architecture Flow</p>
+          <div className="text-center text-4xl md:text-5xl font-bold tracking-tight text-white mb-12">
+            The Processing Engine
+          </div>
+          
+          <div className="rounded-[40px] border border-white/10 bg-black/40 backdrop-blur-md p-6 md:p-12 overflow-hidden shadow-[0_0_80px_-20px_rgba(82,39,255,0.4)] relative">
+            {/* Flowchart Diagram */}
+            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,_rgba(82,39,255,0.15)_0%,_transparent_70%)]" />
+            <div className="relative z-10 w-full overflow-x-auto overflow-y-hidden">
+              <ArchitectureFlow />
+            </div>
+          </div>
+        </ScrollReveal>
+      </section>
+
       {/* 5. HYBRID INTELLIGENCE (Iridescence + ShapeBlur) */}
       <section className="relative w-full min-h-screen bg-[#050110] flex flex-col items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
@@ -241,30 +258,6 @@ export default function Landing() {
           <h2 className="text-5xl md:text-7xl font-black text-white mb-6 drop-shadow-2xl">Hyper Intelligence</h2>
           <p className="text-xl text-purple-100/90 font-medium tracking-wide">
             Graph memory, vector search, and web retrieval working together for complete context assembly.
-          </p>
-        </ScrollReveal>
-      </section>
-
-      {/* 6. GRAPH VISUALIZATION (GridMotion) */}
-      <section className="relative w-full min-h-screen bg-black overflow-hidden flex flex-col items-center justify-center">
-        <ScrollReveal className="absolute inset-0 z-0 pointer-events-none">
-          <GridMotion 
-            gradientColor="#5227FF" 
-            items={[
-              'Entity', 'Relationship', 'Node', 'Edge',
-              'Provenance', 'Timestamp', 'Confidence', 'Layer',
-              'Vector', 'Embedding', 'Similarity', 'Context',
-              'Reasoning', 'Memory', 'Knowledge', 'Graph',
-              'Query', 'Traverse', 'Connect', 'Discover',
-              'Personal', 'Organization', 'Global', 'Hybrid',
-              'Explain', 'Source', 'Score', 'Path'
-            ]} 
-          />
-        </ScrollReveal>
-        <ScrollReveal className="relative z-10 max-w-3xl text-center px-4 mix-blend-difference pointer-events-none">
-          <h2 className="text-5xl md:text-7xl font-black text-white mb-6">Interactive Graph Visualization</h2>
-          <p className="text-xl text-white/80">
-            Explore knowledge graphs with D3.js. Watch reasoning paths light up in real-time with WebSocket updates.
           </p>
         </ScrollReveal>
       </section>

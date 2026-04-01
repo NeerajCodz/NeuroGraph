@@ -86,7 +86,7 @@ function Layout() {
 
           <div
             className={cn(
-              'relative z-10 flex-1 h-full min-h-0 flex flex-col w-full',
+              'relative z-10 flex-1 min-h-0 flex flex-col w-full',
               isFullscreenRoute ? 'overflow-hidden p-0' : compactMode ? 'overflow-y-auto p-1.5 md:p-2.5' : 'overflow-y-auto p-2 md:p-4',
             )}
           >

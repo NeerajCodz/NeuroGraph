@@ -45,6 +45,7 @@ interface MemoryItem {
   is_locked?: boolean;
   canvas_x?: number | null;
   canvas_y?: number | null;
+  metadata?: Record<string, unknown>;
 }
 
 interface MemoryDetail {
@@ -104,6 +105,7 @@ interface NodeData {
   layer: 'personal' | 'workspace';
   confidence: number;
   isLocked: boolean;
+  metadata?: Record<string, unknown>;
   onContextMenu?: (id: string, event: React.MouseEvent) => void;
   onSelect?: (id: string) => void;
 }
@@ -160,6 +162,7 @@ export default function MemoryCanvas() {
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
+  const [integrationFilter, setIntegrationFilter] = useState<string>('all');
 
   const reactFlowRef = useRef<HTMLDivElement>(null);
 
@@ -263,6 +266,17 @@ export default function MemoryCanvas() {
         ) as MemoryItem[];
       }
 
+      // Apply integration filter
+      if (integrationFilter !== 'all') {
+        memories = memories.filter(mem => {
+          const source = mem.metadata?.source as string | undefined;
+          if (integrationFilter === 'manual') {
+            return !source; // No source means manually created
+          }
+          return source === integrationFilter;
+        });
+      }
+
       // Fetch edges
       const canvasEdges = await memoryApi.listEdges(
         activeLayer,
@@ -283,6 +297,7 @@ export default function MemoryCanvas() {
             layer: activeLayer,
             confidence: mem.confidence,
             isLocked: mem.is_locked ?? false,
+            metadata: mem.metadata,
             onContextMenu: handleContextMenu,
             onSelect: handleNodeSelectWithConnect,
           },
@@ -325,7 +340,7 @@ export default function MemoryCanvas() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeLayer, selectedWorkspaceId, searchQuery, setNodes, setEdges, handleContextMenu, handleNodeSelectWithConnect]);
+  }, [activeLayer, selectedWorkspaceId, searchQuery, integrationFilter, setNodes, setEdges, handleContextMenu, handleNodeSelectWithConnect]);
 
   // Load on layer/workspace change
   useEffect(() => {
@@ -546,7 +561,7 @@ export default function MemoryCanvas() {
   }, []);
 
   return (
-    <div className="absolute inset-0 flex w-full">
+    <div className="h-full flex w-full">
       {/* Left Sidebar */}
       <div className="w-64 bg-black/30 border-r border-white/10 p-4 flex flex-col gap-4 backdrop-blur-xl">
         {/* Layer Selection */}
@@ -649,6 +664,24 @@ export default function MemoryCanvas() {
             placeholder="Search memories..."
             className="pl-10 bg-black/30 border-white/10 text-white placeholder:text-white/40"
           />
+        </div>
+
+        {/* Integration Filter */}
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-white/70 uppercase tracking-wider">Source Filter</h3>
+          <Select value={integrationFilter} onValueChange={setIntegrationFilter}>
+            <SelectTrigger className="w-full bg-black/30 border-white/10 text-white">
+              <SelectValue placeholder="All sources" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#0a0520] border-white/10">
+              <SelectItem value="all" className="text-white">All Sources</SelectItem>
+              <SelectItem value="manual" className="text-white">Manual</SelectItem>
+              <SelectItem value="slack" className="text-white">💬 Slack</SelectItem>
+              <SelectItem value="gmail" className="text-white">📧 Gmail</SelectItem>
+              <SelectItem value="notion" className="text-white">📝 Notion</SelectItem>
+              <SelectItem value="github" className="text-white">🔗 GitHub</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

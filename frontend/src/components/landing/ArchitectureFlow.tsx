@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import BorderGlow from '@/components/BorderGlow';
 import { MessageSquare, Terminal, Webhook, Bot, Server, Activity, Brain, Layers, Globe, Download, ShieldAlert, Bell, Network, Database, Container } from 'lucide-react';
 
-const FlowNode = ({ icon: Icon, title, subtitle, popup, delay = 0, colorClass = "from-purple-500/20 to-purple-500/0", borderClass = "border-purple-500/30" }) => (
+const FlowNode = ({ icon: Icon, title, subtitle, popup, delay = 0, colorClass = "from-purple-500/20 to-purple-500/0", borderClass = "border-purple-500/30" }: { icon: React.ComponentType<{ className?: string }>, title: string, subtitle: string, popup: string, delay?: number, colorClass?: string, borderClass?: string }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     whileInView={{ opacity: 1, y: 0 }}
@@ -24,7 +24,7 @@ const FlowNode = ({ icon: Icon, title, subtitle, popup, delay = 0, colorClass = 
   </motion.div>
 );
 
-const FlowLayer = ({ title, children, delay = 0 }) => (
+const FlowLayer = ({ title, children, delay = 0 }: { title: string, children: React.ReactNode, delay?: number }) => (
   <motion.div 
     initial={{ opacity: 0 }}
     whileInView={{ opacity: 1 }}
@@ -39,7 +39,7 @@ const FlowLayer = ({ title, children, delay = 0 }) => (
   </motion.div>
 );
 
-const AnimatedArrow = ({ delay = 0 }) => (
+const AnimatedArrow = ({ delay = 0 }: { delay?: number }) => (
   <motion.div
     initial={{ opacity: 0, height: 0 }}
     whileInView={{ opacity: 1, height: 40 }}
