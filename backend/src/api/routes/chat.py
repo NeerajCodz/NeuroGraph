@@ -698,6 +698,7 @@ async def stream_chat(
                 else (preferred_agents_enabled if preferred_agents_enabled is not None else True)
             )
             memory_agent_enabled = bool(user_pref_settings.get("agent_memory_enabled", True))
+            show_reasoning = bool(user_pref_settings.get("show_reasoning", True))
             custom_key_override = custom_provider_keys.get(provider.lower())
 
             # Create/get conversation
@@ -1023,12 +1024,133 @@ async def stream_chat(
             yield f"data: {json.dumps({'type': 'step', 'data': step3_complete.to_dict()})}\n\n"
 
             # =========================================================================
-            # STEP 4: Generate Response (LLM)
+            # STEP 4: Reasoning Agent (if enabled)
+            # =========================================================================
+            reasoning_result = None
+            synthesized_context = ""
+            reasoning_trace = ""
+            
+            if show_reasoning and memory_results:
+                from src.models.nvidia import get_nvidia_client
+                
+                step_start = time.time()
+                
+                step4_reasoning = StreamingStepResult(
+                    step=4,
+                    action="Reasoning over context",
+                    status="running",
+                    description="Analyzing memory nodes and graph paths",
+                    reasoning="Using reasoning agent to synthesize context with explicit reasoning traces",
+                    details=[
+                        {"type": "info", "content": "Model: Nemotron Reasoning Agent"},
+                        {"type": "info", "content": f"Processing {len(memory_results)} memory nodes"},
+                        {"type": "info", "content": f"Processing {len(graph_paths)} graph paths"},
+                    ]
+                )
+                yield f"data: {json.dumps({'type': 'step', 'data': step4_reasoning.to_dict()})}\n\n"
+                
+                try:
+                    nvidia_client = get_nvidia_client()
+                    
+                    # Convert memory results to dict format for reasoning agent
+                    memory_nodes_dict = [
+                        {
+                            "content": m.content,
+                            "score": getattr(m, 'final_score', getattr(m, 'similarity', 0.7)),
+                            "layer": m.layer,
+                            "node_id": str(m.node_id),
+                        }
+                        for m in memory_results[:10]
+                    ]
+                    
+                    reasoning_result = await nvidia_client.reason_over_nodes(
+                        query=message.content,
+                        memory_nodes=memory_nodes_dict,
+                        graph_paths=graph_paths,
+                        api_key=custom_provider_keys.get("nvidia"),
+                        enable_thinking=True,
+                    )
+                    
+                    synthesized_context = reasoning_result.get("synthesized_context", "")
+                    reasoning_trace = reasoning_result.get("reasoning", "")
+                    cited_nodes = reasoning_result.get("cited_nodes", [])
+                    reasoning_confidence = reasoning_result.get("confidence", 0.7)
+                    
+                    step_duration = int((time.time() - step_start) * 1000)
+                    
+                    reasoning_details = [
+                        {"type": "info", "content": f"Reasoning confidence: {reasoning_confidence:.0%}"},
+                    ]
+                    
+                    # Add reasoning trace steps
+                    if reasoning_trace:
+                        for i, line in enumerate(reasoning_trace.split("\n")[:5]):
+                            if line.strip():
+                                reasoning_details.append({
+                                    "type": "connection",
+                                    "content": line.strip(),
+                                })
+                    
+                    # Add cited nodes
+                    for node in cited_nodes[:3]:
+                        reasoning_details.append({
+                            "type": "node",
+                            "content": f"[{node.get('score', 0):.2f}] {node.get('content', '')[:60]}...",
+                        })
+                    
+                    reasoning_details.append({
+                        "type": "result",
+                        "content": f"Synthesized context: {len(synthesized_context)} chars"
+                    })
+                    
+                    step4_complete = StreamingStepResult(
+                        step=4,
+                        action="Reasoning over context",
+                        status="completed",
+                        description="Context reasoning complete",
+                        reasoning=f"Traced {len(graph_paths)} paths, cited {len(cited_nodes)} nodes",
+                        result=f"Reasoning confidence: {reasoning_confidence:.0%}",
+                        duration_ms=step_duration,
+                        details=reasoning_details
+                    )
+                    step_results.append(step4_complete.to_dict())
+                    yield f"data: {json.dumps({'type': 'step', 'data': step4_complete.to_dict()})}\n\n"
+                    
+                except Exception as reasoning_err:
+                    logger.warning("reasoning_agent_error", error=str(reasoning_err))
+                    step_duration = int((time.time() - step_start) * 1000)
+                    
+                    step4_failed = StreamingStepResult(
+                        step=4,
+                        action="Reasoning over context",
+                        status="skipped",
+                        description="Reasoning agent unavailable",
+                        reasoning=f"Falling back to direct context: {str(reasoning_err)[:50]}",
+                        duration_ms=step_duration,
+                        details=[{"type": "info", "content": "Using direct memory context"}]
+                    )
+                    step_results.append(step4_failed.to_dict())
+                    yield f"data: {json.dumps({'type': 'step', 'data': step4_failed.to_dict()})}\n\n"
+            else:
+                # Skip reasoning step
+                step4_skip = StreamingStepResult(
+                    step=4,
+                    action="Reasoning over context",
+                    status="skipped",
+                    description="Reasoning disabled or no memory context",
+                    reasoning="Using direct context assembly" if memory_results else "No memories to reason over",
+                    details=[{"type": "info", "content": "Proceeding to response generation"}]
+                )
+                step_results.append(step4_skip.to_dict())
+                yield f"data: {json.dumps({'type': 'step', 'data': step4_skip.to_dict()})}\n\n"
+
+            # =========================================================================
+            # STEP 5: Generate Response (LLM)
             # =========================================================================
             step_start = time.time()
             
-            step4 = StreamingStepResult(
-                step=4,
+            step5 = StreamingStepResult(
+                step=5,
                 action="Generating response",
                 status="running",
                 description="Synthesizing answer from all gathered context",
@@ -1038,12 +1160,17 @@ async def stream_chat(
                     {"type": "info", "content": f"Model: {model}"},
                 ]
             )
-            yield f"data: {json.dumps({'type': 'step', 'data': step4.to_dict()})}\n\n"
+            yield f"data: {json.dumps({'type': 'step', 'data': step5.to_dict()})}\n\n"
 
-            # Build context
+            # Build context - use synthesized context if reasoning was performed
             context = ""
             reasoning_context = ""
-            if memory_results:
+            if synthesized_context:
+                # Use the reasoning agent's synthesized context
+                context = synthesized_context
+                if reasoning_trace:
+                    reasoning_context = f"\n\nReasoning Trace:\n{reasoning_trace}"
+            elif memory_results:
                 context_assembler = ContextAssembler()
                 context = context_assembler.assemble(scored_nodes=memory_results)
                 
@@ -1110,8 +1237,8 @@ async def stream_chat(
 
             step_duration = int((time.time() - step_start) * 1000)
             
-            step4_complete = StreamingStepResult(
-                step=4,
+            step5_complete = StreamingStepResult(
+                step=5,
                 action="Generating response",
                 status="completed",
                 description="Response generated successfully",
@@ -1125,8 +1252,8 @@ async def stream_chat(
                     {"type": "result", "content": f"Response generated ({len(response_text)} chars)"}
                 ]
             )
-            step_results.append(step4_complete.to_dict())
-            yield f"data: {json.dumps({'type': 'step', 'data': step4_complete.to_dict()})}\n\n"
+            step_results.append(step5_complete.to_dict())
+            yield f"data: {json.dumps({'type': 'step', 'data': step5_complete.to_dict()})}\n\n"
 
             # Save assistant message
             assistant_message_id = uuid4()

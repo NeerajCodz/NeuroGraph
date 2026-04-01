@@ -41,6 +41,15 @@ NVIDIA_MODELS = {
         "supports_reasoning": True,
         "extra_body": {"chat_template_kwargs": {"thinking": True}},
     },
+    # Nemotron reasoning models
+    "nemotron-reasoning-4b": {
+        "id": "nvidia/nemotron-content-safety-reasoning-4b",
+        "max_tokens": 2048,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "supports_reasoning": True,
+        "is_reasoning_agent": True,
+    },
     # Code/instruction models
     "devstral-2-123b": {
         "id": "mistralai/devstral-2-123b-instruct-2512",
@@ -277,6 +286,227 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
             system_instruction=system_instruction or default_system,
             model=model,
         )
+
+    async def reason_over_nodes(
+        self,
+        query: str,
+        memory_nodes: list[dict],
+        graph_paths: list[dict],
+        api_key: str | None = None,
+        enable_thinking: bool = True,
+    ) -> dict:
+        """
+        Use Nemotron reasoning model to analyze memory nodes and graph paths.
+        
+        Args:
+            query: User's original query
+            memory_nodes: List of memory nodes with content, score, layer
+            graph_paths: List of graph paths with source, relationship, target, reason
+            api_key: Optional API key override
+            enable_thinking: Whether to use /think mode for explicit reasoning traces
+            
+        Returns:
+            dict with 'reasoning', 'synthesized_context', 'confidence', 'cited_nodes'
+        """
+        client = self._build_client(api_key)
+        if client is None:
+            # Fallback to simple context assembly if NVIDIA not available
+            logger.info("reasoning_agent_fallback", reason="NVIDIA API not configured")
+            return self._fallback_reasoning(query, memory_nodes, graph_paths)
+        
+        # Build the reasoning prompt
+        nodes_text = ""
+        for i, node in enumerate(memory_nodes[:10]):
+            score = node.get("score", node.get("similarity", 0.7))
+            content = node.get("content", "")[:200]
+            layer = node.get("layer", "unknown")
+            nodes_text += f"[Node {i+1}] (score: {score:.2f}, layer: {layer})\n{content}\n\n"
+        
+        paths_text = ""
+        for path in graph_paths[:10]:
+            source = path.get("source", "?")
+            rel = path.get("relationship", "CONNECTED_TO")
+            target = path.get("target", "?")
+            reason = path.get("reason", "")
+            paths_text += f"  {source} → {rel} → {target}"
+            if reason:
+                paths_text += f" (reason: {reason})"
+            paths_text += "\n"
+        
+        reasoning_prompt = f"""You are a reasoning agent that analyzes memory nodes and graph relationships to synthesize context for answering user queries.
+
+USER QUERY: {query}
+
+MEMORY NODES:
+{nodes_text if nodes_text else "No memory nodes available"}
+
+GRAPH RELATIONSHIPS:
+{paths_text if paths_text else "No graph paths available"}
+
+TASK:
+1. Analyze which memory nodes are most relevant to the query
+2. Trace the reasoning path through graph relationships
+3. Synthesize a coherent context that explains HOW you arrived at the answer
+4. Cite specific nodes by their scores (e.g., [0.85] Frank prefers...)
+5. Rate overall confidence (0.0-1.0) based on node scores and path coherence
+
+OUTPUT FORMAT:
+<reasoning>
+[Your step-by-step analysis of how nodes connect to answer the query]
+</reasoning>
+
+<synthesized_context>
+[A clear, structured context ready for the main LLM to use]
+</synthesized_context>
+
+<cited_nodes>
+[List of cited node scores and key content]
+</cited_nodes>
+
+<confidence>
+[0.0-1.0 confidence score]
+</confidence>
+
+{"Use /think to enable reasoning traces." if enable_thinking else "Use /no_think for direct output."} {"/" + ("think" if enable_thinking else "no_think")}"""
+
+        try:
+            await self._rate_limit_delay()
+            
+            # Use Nemotron reasoning model or fallback to llama
+            model_key = "nemotron-reasoning-4b"
+            model_config = NVIDIA_MODELS.get(model_key)
+            
+            if not model_config:
+                # Fallback to llama-3.3-70b if reasoning model not available
+                model_key = "llama-3.3-70b"
+                model_config = NVIDIA_MODELS.get(model_key, {
+                    "id": "meta/llama-3.3-70b-instruct",
+                    "max_tokens": 4096,
+                    "temperature": 0.3,
+                    "top_p": 0.9,
+                })
+            
+            messages = [{"role": "user", "content": reasoning_prompt}]
+            
+            response = await client.chat.completions.create(
+                model=model_config["id"],
+                messages=messages,
+                temperature=model_config.get("temperature", 0.0),
+                top_p=model_config.get("top_p", 1.0),
+                max_tokens=model_config.get("max_tokens", 2048),
+            )
+            
+            result_text = response.choices[0].message.content or ""
+            
+            logger.info(
+                "reasoning_agent_complete",
+                model=model_key,
+                input_nodes=len(memory_nodes),
+                input_paths=len(graph_paths),
+                output_length=len(result_text),
+            )
+            
+            # Parse the response
+            return self._parse_reasoning_response(result_text, memory_nodes)
+            
+        except Exception as e:
+            logger.warning("reasoning_agent_error", error=str(e))
+            return self._fallback_reasoning(query, memory_nodes, graph_paths)
+    
+    def _parse_reasoning_response(self, response: str, memory_nodes: list[dict]) -> dict:
+        """Parse the structured reasoning response."""
+        import re
+        
+        reasoning = ""
+        synthesized_context = ""
+        cited_nodes = []
+        confidence = 0.7
+        
+        # Extract reasoning
+        reasoning_match = re.search(r"<reasoning>(.*?)</reasoning>", response, re.DOTALL)
+        if reasoning_match:
+            reasoning = reasoning_match.group(1).strip()
+        
+        # Extract synthesized context
+        context_match = re.search(r"<synthesized_context>(.*?)</synthesized_context>", response, re.DOTALL)
+        if context_match:
+            synthesized_context = context_match.group(1).strip()
+        
+        # Extract cited nodes
+        cited_match = re.search(r"<cited_nodes>(.*?)</cited_nodes>", response, re.DOTALL)
+        if cited_match:
+            cited_text = cited_match.group(1).strip()
+            # Parse [score] content format
+            for match in re.finditer(r"\[(\d+\.?\d*)\]\s*(.+?)(?=\[|$)", cited_text, re.DOTALL):
+                cited_nodes.append({
+                    "score": float(match.group(1)),
+                    "content": match.group(2).strip()[:100],
+                })
+        
+        # Extract confidence
+        conf_match = re.search(r"<confidence>\s*([\d.]+)", response)
+        if conf_match:
+            try:
+                confidence = min(1.0, max(0.0, float(conf_match.group(1))))
+            except ValueError:
+                pass
+        
+        # If parsing failed, use the whole response as context
+        if not synthesized_context:
+            # Check for <think> tags (from reasoning mode)
+            think_match = re.search(r"<think>(.*?)</think>", response, re.DOTALL)
+            if think_match:
+                reasoning = think_match.group(1).strip()
+                # Use content after </think> as synthesized context
+                after_think = response.split("</think>")[-1].strip()
+                synthesized_context = after_think if after_think else response
+            else:
+                synthesized_context = response
+        
+        return {
+            "reasoning": reasoning,
+            "synthesized_context": synthesized_context,
+            "confidence": confidence,
+            "cited_nodes": cited_nodes,
+        }
+    
+    def _fallback_reasoning(
+        self,
+        query: str,
+        memory_nodes: list[dict],
+        graph_paths: list[dict],
+    ) -> dict:
+        """Fallback reasoning when NVIDIA API is not available."""
+        # Build simple context from nodes
+        context_parts = []
+        cited_nodes = []
+        
+        for node in memory_nodes[:5]:
+            score = node.get("score", node.get("similarity", 0.7))
+            content = node.get("content", "")
+            context_parts.append(f"[{score:.2f}] {content}")
+            cited_nodes.append({"score": score, "content": content[:100]})
+        
+        # Add graph paths to reasoning
+        reasoning_parts = []
+        for path in graph_paths[:5]:
+            source = path.get("source", "?")
+            rel = path.get("relationship", "→")
+            target = path.get("target", "?")
+            reason = path.get("reason", "")
+            path_str = f"{source} → {rel} → {target}"
+            if reason:
+                path_str += f" ({reason})"
+            reasoning_parts.append(path_str)
+        
+        avg_score = sum(n.get("score", n.get("similarity", 0.7)) for n in memory_nodes[:5]) / max(len(memory_nodes[:5]), 1)
+        
+        return {
+            "reasoning": "\n".join(reasoning_parts) if reasoning_parts else "Direct memory retrieval (no graph paths)",
+            "synthesized_context": "\n\n".join(context_parts),
+            "confidence": avg_score,
+            "cited_nodes": cited_nodes,
+        }
 
 
 # Global client instance

@@ -310,8 +310,50 @@ export default function Chat() {
   useEffect(() => {
     if (routeConversationId) {
       setConversationId(routeConversationId);
+      // Load conversation messages
+      const loadConversation = async () => {
+        try {
+          setIsLoading(true);
+          const conversation = await chatApi.getConversation(routeConversationId) as {
+            id: string;
+            messages: Array<{
+              id: string;
+              role: 'user' | 'assistant';
+              content: string;
+              reasoning_path?: ReasoningStep[] | null;
+              sources?: MemorySource[] | null;
+              processing_steps?: ProcessingStep[] | null;
+              confidence?: number;
+              created_at: string;
+            }>;
+          };
+          
+          // Convert to Message format with processing_steps from DB
+          const loadedMessages: Message[] = conversation.messages.map(msg => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            reasoning_path: msg.reasoning_path,
+            sources: msg.sources,
+            confidence: msg.confidence,
+            created_at: msg.created_at,
+            // Processing steps are stored in processing_steps (or reasoning_path as fallback)
+            processing_steps: msg.processing_steps || (msg.reasoning_path as unknown as ProcessingStep[]) || [],
+            graph_paths: [],
+          }));
+          
+          setMessages(loadedMessages);
+        } catch (err) {
+          console.error('Failed to load conversation:', err);
+          setError('Failed to load conversation');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      loadConversation();
     } else {
       setConversationId(null);
+      setMessages([]);
     }
   }, [routeConversationId]);
 

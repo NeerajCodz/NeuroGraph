@@ -36,8 +36,10 @@ class MessageResponse(BaseModel):
     provider: str | None
     model: str | None
     confidence: float | None
-    reasoning_path: list | None
+    reasoning_path: list | None  # This contains processing_steps
     sources: list | None
+    processing_steps: list | None = None  # Alias for reasoning_path for frontend compatibility
+    graph_paths: list | None = None
     created_at: datetime
 
 
@@ -239,6 +241,7 @@ async def get_conversation(
                     confidence=m["confidence"],
                     reasoning_path=m["reasoning_path"],
                     sources=m["sources"],
+                    processing_steps=m["reasoning_path"],  # reasoning_path contains the processing steps
                     created_at=m["created_at"],
                 )
                 for m in message_rows
