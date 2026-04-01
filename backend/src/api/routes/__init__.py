@@ -10,6 +10,7 @@ from src.api.routes.models import router as models_router
 from src.api.routes.workspaces import router as workspaces_router
 from src.api.routes.conversations import router as conversations_router
 from src.api.routes.profile import router as profile_router
+from src.api.routes.integrations import integration_router
 
 # Create main API router
 api_router = APIRouter()
@@ -22,6 +23,7 @@ api_router.include_router(models_router)
 api_router.include_router(workspaces_router, prefix="/workspaces", tags=["workspaces"])
 api_router.include_router(conversations_router, prefix="/conversations", tags=["conversations"])
 api_router.include_router(profile_router)
+api_router.include_router(integration_router)
 
 __all__ = [
     "api_router",
@@ -33,4 +35,5 @@ __all__ = [
     "workspaces_router",
     "conversations_router",
     "profile_router",
+    "integration_router",
 ]

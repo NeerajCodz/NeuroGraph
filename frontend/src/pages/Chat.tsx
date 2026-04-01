@@ -490,8 +490,8 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex flex-1 h-full w-full flex-col">
-      <section className="flex h-full w-full max-w-4xl mx-auto flex-col">
+    <div className="absolute inset-0 flex flex-col">
+      <section className="flex flex-1 h-full min-h-0 w-full max-w-4xl mx-auto flex-col">
         {/* Top Bar */}
         <div className={cn('flex justify-between items-center px-4 md:px-6 shrink-0 gap-3 border-b border-white/5', compactMode ? 'py-2' : 'py-3')}>
           <div className="flex items-center gap-2">
@@ -860,7 +860,7 @@ export default function Chat() {
       {/* Orchestrator Panel */}
       {showReasoning && isOrchestratorOpen && (
         <aside className="absolute right-0 top-0 bottom-0 z-10 w-80 border-l border-white/10 bg-[#090512]/95 backdrop-blur-md shadow-2xl">
-          <div className="flex flex-1 h-full w-full flex-col">
+          <div className="absolute inset-0 flex flex-col">
             <div className="flex items-center justify-between border-b border-white/10 p-4">
               <div>
                 <h3 className="text-sm font-semibold text-white">Live Session Panel</h3>

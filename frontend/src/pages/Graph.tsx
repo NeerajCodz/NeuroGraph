@@ -35,7 +35,7 @@ export default function Graph() {
     : [];
 
   return (
-    <div className="grid flex-1 h-full min-h-0 w-full gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="absolute inset-0 grid p-4 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
       <section className="flex min-h-0 flex-col gap-3 rounded-3xl border border-white/10 bg-[#0d0620]/65 p-4 backdrop-blur-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

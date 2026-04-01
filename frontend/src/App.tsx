@@ -10,6 +10,7 @@ import Signup from '@/pages/Signup';
 import Admin from '@/pages/Admin';
 import Memory from '@/pages/Memory';
 import Profile from '@/pages/Profile';
+import Integrations from '@/pages/Integrations';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { Sparkles } from 'lucide-react';
@@ -48,6 +49,7 @@ function Layout() {
     if (location.pathname.startsWith('/settings')) return 'System Settings';
     if (location.pathname.startsWith('/admin')) return 'Admin Center';
     if (location.pathname.startsWith('/profile')) return 'Profile & Settings';
+    if (location.pathname.startsWith('/integrations')) return 'Integrations';
     return 'Intelligence Chat';
   }, [location.pathname]);
 
@@ -97,6 +99,7 @@ function Layout() {
               <Route path="/settings" element={<Navigate to="/profile/settings" replace />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/profile/*" element={<Profile />} />
+              <Route path="/integrations" element={<Integrations />} />
               <Route path="/admin" element={<Admin />} />
             </Routes>
           </div>

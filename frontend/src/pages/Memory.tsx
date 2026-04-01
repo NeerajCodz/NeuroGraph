@@ -546,7 +546,7 @@ export default function MemoryCanvas() {
   }, []);
 
   return (
-    <div className="flex-1 h-full min-h-0 flex w-full">
+    <div className="absolute inset-0 flex w-full">
       {/* Left Sidebar */}
       <div className="w-64 bg-black/30 border-r border-white/10 p-4 flex flex-col gap-4 backdrop-blur-xl">
         {/* Layer Selection */}

@@ -1,7 +1,15 @@
 import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Lock, Unlock, Brain, Users } from 'lucide-react';
+import { Lock, Unlock, Brain, Users, MessageSquare, Mail, FileText, GitBranch as Github } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Integration source icons and colors
+const INTEGRATION_BADGES: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+  slack: { icon: <MessageSquare className="w-2.5 h-2.5" />, color: 'bg-[#4A154B]/60 text-[#E01E5A]', label: 'Slack' },
+  gmail: { icon: <Mail className="w-2.5 h-2.5" />, color: 'bg-[#EA4335]/20 text-[#EA4335]', label: 'Gmail' },
+  notion: { icon: <FileText className="w-2.5 h-2.5" />, color: 'bg-white/10 text-white/80', label: 'Notion' },
+  github: { icon: <Github className="w-2.5 h-2.5" />, color: 'bg-[#24292e]/60 text-white/80', label: 'GitHub' },
+};
 
 export interface MemoryNodeData extends Record<string, unknown> {
   id: string;
@@ -9,6 +17,11 @@ export interface MemoryNodeData extends Record<string, unknown> {
   layer: 'personal' | 'workspace';
   confidence: number;
   isLocked: boolean;
+  metadata?: {
+    source?: string;
+    event_type?: string;
+    [key: string]: unknown;
+  };
   onContextMenu?: (id: string, event: React.MouseEvent) => void;
   onSelect?: (id: string) => void;
 }
@@ -45,6 +58,10 @@ function MemoryNode({ data, selected }: NodeProps) {
       ? 'text-yellow-400' 
       : 'text-red-400';
 
+  // Get integration source from metadata
+  const integrationSource = nodeData.metadata?.source;
+  const integrationBadge = integrationSource ? INTEGRATION_BADGES[integrationSource] : null;
+
   return (
     <div
       onContextMenu={handleContextMenu}
@@ -71,6 +88,18 @@ function MemoryNode({ data, selected }: NodeProps) {
             <span>{nodeData.layer}</span>
           </div>
           <div className="flex items-center gap-2">
+            {/* Integration source badge */}
+            {integrationBadge && (
+              <span 
+                className={cn(
+                  'flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium',
+                  integrationBadge.color
+                )}
+                title={`From ${integrationBadge.label}`}
+              >
+                {integrationBadge.icon}
+              </span>
+            )}
             <span className={cn('text-[10px] font-medium', confidenceColor)}>
               {Math.round(nodeData.confidence * 100)}%
             </span>

@@ -651,4 +651,66 @@ export const graphApi = {
   },
 };
 
+// Integrations API
+export interface Integration {
+  id: string;
+  integration_type: string;
+  scope: string;
+  name: string | null;
+  external_id: string | null;
+  external_name: string | null;
+  enabled: boolean;
+  status: string;
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationType {
+  type: string;
+  name: string;
+  description: string;
+  scopes: string[];
+  supports_multiple: boolean;
+  oauth_required: boolean;
+}
+
+export const integrationsApi = {
+  async listConnections(scope?: string, integrationType?: string) {
+    const params = new URLSearchParams();
+    if (scope) params.append('scope', scope);
+    if (integrationType) params.append('integration_type', integrationType);
+    return request<{ connections: Integration[] }>(`/integrations/connections?${params}`);
+  },
+
+  async getConnection(id: string) {
+    return request<Integration>(`/integrations/connections/${id}`);
+  },
+
+  async updateConnection(id: string, data: { name?: string; enabled?: boolean }) {
+    return request<Integration>(`/integrations/connections/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteConnection(id: string) {
+    return request(`/integrations/connections/${id}`, { method: 'DELETE' });
+  },
+
+  async getTypes() {
+    return request<{ integrations: IntegrationType[] }>('/integrations/types');
+  },
+
+  async initiateOAuth(integrationType: string, scope: string, workspaceId?: string) {
+    const body: Record<string, unknown> = { integration_type: integrationType, scope };
+    if (workspaceId) body.workspace_id = workspaceId;
+    return request<{ authorization_url: string }>('/integrations/oauth/initiate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+};
+
 export { ApiError };

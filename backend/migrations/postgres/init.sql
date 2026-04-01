@@ -172,6 +172,55 @@ CREATE INDEX IF NOT EXISTS idx_events_source ON integrations.events(source);
 CREATE INDEX IF NOT EXISTS idx_events_processed ON integrations.events(processed);
 CREATE INDEX IF NOT EXISTS idx_events_created ON integrations.events(created_at DESC);
 
+-- Integration connections (OAuth tokens and configuration)
+CREATE TABLE IF NOT EXISTS integrations.connections (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES auth.tenants(id) ON DELETE CASCADE,
+    integration_type VARCHAR(50) NOT NULL, -- slack, gmail, notion, github, etc
+    scope VARCHAR(20) NOT NULL DEFAULT 'personal', -- personal or workspace
+    name VARCHAR(255), -- User-defined name (e.g., "Engineering Workspace", "Personal Gmail")
+    
+    -- OAuth credentials (encrypted)
+    access_token TEXT,
+    refresh_token TEXT,
+    token_expires_at TIMESTAMP WITH TIME ZONE,
+    
+    -- Integration-specific data
+    external_id VARCHAR(255), -- Team ID (Slack), Workspace ID (Notion), email (Gmail)
+    external_name VARCHAR(255), -- Team name, Workspace name, etc
+    
+    -- Configuration
+    config JSONB DEFAULT '{}', -- Integration-specific settings
+    enabled BOOLEAN DEFAULT TRUE,
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'active', -- active, disconnected, error
+    last_sync_at TIMESTAMP WITH TIME ZONE,
+    last_error TEXT,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    -- Constraints
+    CONSTRAINT chk_connections_scope CHECK (
+        (scope = 'personal' AND user_id IS NOT NULL AND tenant_id IS NULL)
+        OR (scope = 'workspace' AND tenant_id IS NOT NULL)
+    ),
+    -- Allow multiple connections of same type for different workspaces
+    CONSTRAINT uq_connections_personal UNIQUE (user_id, integration_type, external_id, scope) 
+        WHERE scope = 'personal',
+    CONSTRAINT uq_connections_workspace UNIQUE (tenant_id, integration_type, external_id, scope) 
+        WHERE scope = 'workspace'
+);
+
+CREATE INDEX IF NOT EXISTS idx_connections_user ON integrations.connections(user_id);
+CREATE INDEX IF NOT EXISTS idx_connections_tenant ON integrations.connections(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_connections_type ON integrations.connections(integration_type);
+CREATE INDEX IF NOT EXISTS idx_connections_scope ON integrations.connections(scope);
+CREATE INDEX IF NOT EXISTS idx_connections_enabled ON integrations.connections(enabled);
+CREATE INDEX IF NOT EXISTS idx_connections_external ON integrations.connections(integration_type, external_id);
+
 -- Reminders
 CREATE TABLE IF NOT EXISTS memory.reminders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -211,4 +260,7 @@ CREATE TRIGGER update_facts_updated_at BEFORE UPDATE ON memory.facts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_canvas_edges_updated_at BEFORE UPDATE ON memory.canvas_edges
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_connections_updated_at BEFORE UPDATE ON integrations.connections
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
