@@ -46,12 +46,20 @@ class PostgresDriver:
                     self._pool_loop = None
 
             try:
+                if self._settings.database_url:
+                    dsn = self._settings.database_url
+                elif self._settings.postgres_uri:
+                    dsn = self._settings.postgres_uri
+                else:
+                    dsn = None
+
                 self._pool = await asyncpg.create_pool(
-                    host=self._settings.postgres_host,
-                    port=self._settings.postgres_port,
-                    user=self._settings.postgres_user,
-                    password=self._settings.postgres_password.get_secret_value(),
-                    database=self._settings.postgres_db,
+                    dsn=dsn,
+                    host=None if dsn else self._settings.postgres_host,
+                    port=None if dsn else self._settings.postgres_port,
+                    user=None if dsn else self._settings.postgres_user,
+                    password=None if dsn else self._settings.postgres_password.get_secret_value(),
+                    database=None if dsn else self._settings.postgres_db,
                     min_size=self._settings.postgres_min_pool_size,
                     max_size=self._settings.postgres_max_pool_size,
                     init=self._init_connection,
@@ -59,8 +67,8 @@ class PostgresDriver:
                 self._pool_loop = current_loop
                 logger.info(
                     "postgres_connected",
-                    host=self._settings.postgres_host,
-                    database=self._settings.postgres_db,
+                    host=self._settings.postgres_host if not dsn else "dsn",
+                    database=self._settings.postgres_db if not dsn else "from_dsn",
                 )
             except Exception as e:
                 logger.error("postgres_connection_failed", error=str(e))

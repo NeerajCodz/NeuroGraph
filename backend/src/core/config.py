@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     neo4j_max_connection_pool_size: int = 50
 
     # PostgreSQL
+    database_url: str | None = None  # Generic DB URL (e.g., Neon/Vercel)
+    postgres_uri: str | None = None  # Legacy DSN alias
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_user: str = "neurograph"
@@ -134,6 +136,18 @@ class Settings(BaseSettings):
     @property
     def postgres_dsn(self) -> str:
         """Generate PostgreSQL connection string."""
+        if self.database_url:
+            if self.database_url.startswith("postgres://"):
+                return self.database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+            if self.database_url.startswith("postgresql://"):
+                return self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return self.database_url
+        if self.postgres_uri:
+            if self.postgres_uri.startswith("postgres://"):
+                return self.postgres_uri.replace("postgres://", "postgresql+asyncpg://", 1)
+            if self.postgres_uri.startswith("postgresql://"):
+                return self.postgres_uri.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return self.postgres_uri
         return (
             f"postgresql+asyncpg://{self.postgres_user}:"
             f"{self.postgres_password.get_secret_value()}@"
@@ -143,6 +157,18 @@ class Settings(BaseSettings):
     @property
     def postgres_dsn_sync(self) -> str:
         """Generate synchronous PostgreSQL connection string for migrations."""
+        if self.database_url:
+            if self.database_url.startswith("postgres://"):
+                return self.database_url.replace("postgres://", "postgresql+psycopg://", 1)
+            if self.database_url.startswith("postgresql://"):
+                return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+            return self.database_url
+        if self.postgres_uri:
+            if self.postgres_uri.startswith("postgres://"):
+                return self.postgres_uri.replace("postgres://", "postgresql+psycopg://", 1)
+            if self.postgres_uri.startswith("postgresql://"):
+                return self.postgres_uri.replace("postgresql://", "postgresql+psycopg://", 1)
+            return self.postgres_uri
         return (
             f"postgresql+psycopg://{self.postgres_user}:"
             f"{self.postgres_password.get_secret_value()}@"
