@@ -125,9 +125,31 @@ export default function Landing() {
             transition={{ duration: 1, delay: 1.2 }}
             className="mt-12 pointer-events-auto flex justify-center gap-4"
           >
-            <Link to="/chat" className="rounded-full bg-gradient-to-r from-[#5227FF] to-[#B19EEF] px-8 py-4 text-base font-bold text-white shadow-[0_0_40px_-10px_rgba(82,39,255,0.8)] transition hover:scale-105 hover:shadow-[0_0_60px_-10px_rgba(82,39,255,0.9)]">
-              Start Traversing
-            </Link>
+            <BorderGlow
+              className="inline-grid rounded-full"
+              borderRadius={999}
+              glowRadius={22}
+              glowIntensity={1.45}
+              edgeSensitivity={10}
+              animated={false}
+              colors={['#c084fc', '#FF9FFC', '#5227FF']}
+            >
+              <Link
+                to="/chat"
+                className="inline-flex items-center justify-center rounded-full px-8 py-4 text-base font-bold text-white transition hover:brightness-110 active:scale-[0.98]"
+                style={{
+                  background: 'linear-gradient(90deg, #6d3bff 0%, #c054ff 100%)',
+                  boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.35), inset 0 -4px 8px rgba(0,0,0,0.65), 0 0 28px rgba(168,85,247,0.45)',
+                  borderTop: '1px solid rgba(255,255,255,0.35)',
+                  borderBottom: '2px solid rgba(0,0,0,0.75)',
+                  borderLeft: '1px solid rgba(255,255,255,0.18)',
+                  borderRight: '1px solid rgba(0,0,0,0.35)',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                }}
+              >
+                Start Traversing
+              </Link>
+            </BorderGlow>
           </motion.div>
           </div>
         </div>
@@ -284,21 +306,22 @@ export default function Landing() {
           <GradientBlinds
             className="w-full h-full"
             dpr={2}
-            gradientColors={['#080214', '#1b0f38', '#5227FF', '#B19EEF', '#FF9FFC']}
+            gradientColors={['#050110', '#0a031d', '#14072c', '#26104b', '#3a1b65']}
             angle={-18}
-            noise={0.2}
+            noise={0.1}
             blindCount={24}
             blindMinWidth={42}
             mouseDampening={0.12}
             mirrorGradient
             spotlightRadius={0.62}
             spotlightSoftness={1.25}
-            spotlightOpacity={0.8}
-            distortAmount={0.45}
+            spotlightOpacity={0.35}
+            distortAmount={0.22}
             shineDirection="right"
-            mixBlendMode="screen"
+            mixBlendMode="normal"
           />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(82,39,255,0.22)_0%,_rgba(255,159,252,0.12)_32%,_rgba(5,1,16,0.9)_74%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(82,39,255,0.16)_0%,_rgba(255,159,252,0.07)_30%,_rgba(5,1,16,0.94)_72%)]" />
+          <div className="absolute inset-0 bg-black/35" />
         </div>
 
         <div className="relative z-10 min-h-screen flex items-center justify-center px-6 pointer-events-none">
@@ -344,8 +367,15 @@ export default function Landing() {
             <span className="text-sm font-bold text-white tracking-widest uppercase drop-shadow-sm">NeuroGraph</span>
           </div>
           <div className="text-xs text-white/50 text-center md:text-right font-medium">
-            © 2026 NeerajCodz<br />
-            Under testing
+            © 2026{' '}
+            <a
+              href="https://github.com/NeerajCodz/NeuroGraph"
+              target="_blank"
+              rel="noreferrer"
+              className="text-purple-200/90 hover:text-white underline underline-offset-2 transition"
+            >
+              NeerajCodz/NeuroGraph
+            </a>
           </div>
         </footer>
       </section>
