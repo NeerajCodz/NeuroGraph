@@ -30,7 +30,7 @@ async def admin_status(current_user_id = Depends(get_current_user_id)):
         from src.db.postgres import get_postgres_driver
         
         postgres = get_postgres_driver()
-        async with postgres.get_connection() as conn:
+        async with postgres.connection() as conn:
             user_count = await conn.fetchval("SELECT COUNT(*) FROM auth.users")
             memory_count = await conn.fetchval("SELECT COUNT(*) FROM memory.embeddings") 
             edge_count = await conn.fetchval("SELECT COUNT(*) FROM memory.canvas_edges")
@@ -68,7 +68,7 @@ async def sync_neo4j(
         
         # Get data from Postgres
         postgres = get_postgres_driver()
-        async with postgres.get_connection() as conn:
+        async with postgres.connection() as conn:
             memories = await conn.fetch("""
                 SELECT id, node_id, content, layer, user_id, created_at
                 FROM memory.embeddings ORDER BY created_at LIMIT 50
