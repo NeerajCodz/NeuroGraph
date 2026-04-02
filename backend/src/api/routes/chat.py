@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPExce
 from pydantic import BaseModel, Field
 
 from src.api.dependencies.auth import get_current_user_id
+from src.core.config import get_settings
 from src.core.logging import get_logger
 from src.db.postgres import get_postgres_driver
 
@@ -920,6 +921,7 @@ async def stream_chat(
                 step_start = time.time()
                 
                 # Emit running status
+                embedding_model = get_settings().gemini_model_embedding
                 step1 = StreamingStepResult(
                     step=1,
                     action="Fetching relevant info from RAG",
@@ -927,7 +929,7 @@ async def stream_chat(
                     description="Searching vector database for semantically similar memories",
                     reasoning="Converting query to embeddings and performing similarity search",
                     details=[
-                        {"type": "info", "content": "Embedding query using gemini-embedding-exp-03-07 (768 dim)"}
+                        {"type": "info", "content": f"Embedding query using {embedding_model} (768 dim)"}
                     ]
                 )
                 yield f"data: {json.dumps({'type': 'step', 'data': step1.to_dict()})}\n\n"
@@ -954,7 +956,7 @@ async def stream_chat(
                 
                 # Build real details from results
                 details = [
-                    {"type": "info", "content": f"Embedding query using gemini-embedding-exp-03-07 (768 dim)"},
+                    {"type": "info", "content": f"Embedding query using {embedding_model} (768 dim)"},
                     {"type": "search", "content": f"Searching {', '.join(layers)} memory layers..."},
                     {"type": "result", "content": f"Found {len(memory_results)} relevant memories (similarity > 0.30)"},
                 ]
