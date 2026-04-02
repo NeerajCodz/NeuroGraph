@@ -128,6 +128,12 @@ class Settings(BaseSettings):
     # Notion Integration
     notion_api_key: SecretStr | None = None
 
+    # Admin API Security
+    admin_api_enabled: bool = False
+    admin_username: str = "admin"
+    admin_password: SecretStr | None = None
+    admin_jwt_secret: SecretStr | None = None
+
     @field_validator("scoring_semantic_weight", "scoring_hop_weight", 
                      "scoring_centrality_weight", "scoring_temporal_weight")
     @classmethod
