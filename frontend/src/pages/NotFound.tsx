@@ -84,24 +84,25 @@ export default function NotFound() {
 
           <CardContent className="px-8 pb-10">
             <div className="mt-4 flex flex-col gap-3">
-              <Button
-                asChild
-                className="h-12 w-full rounded-xl border-none bg-gradient-to-r from-purple-600 to-fuchsia-500 text-[15px] font-bold text-white transition-all hover:from-purple-500 hover:to-fuchsia-400"
-                style={{
-                  boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.4), inset 0 -3px 6px rgba(0,0,0,0.6), 0 0 20px rgba(212,166,255,0.4)',
-                  borderTop: '1px solid rgba(255,255,255,0.3)',
-                  borderBottom: '2px solid rgba(0,0,0,0.8)',
-                  textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-                }}
-              >
-                <Link to="/chat">
+              <Link to="/chat" className="w-full">
+                <Button
+                  className="h-12 w-full rounded-xl border-none bg-gradient-to-r from-purple-600 to-fuchsia-500 text-[15px] font-bold text-white transition-all hover:from-purple-500 hover:to-fuchsia-400"
+                  style={{
+                    boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.4), inset 0 -3px 6px rgba(0,0,0,0.6), 0 0 20px rgba(212,166,255,0.4)',
+                    borderTop: '1px solid rgba(255,255,255,0.3)',
+                    borderBottom: '2px solid rgba(0,0,0,0.8)',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                  }}
+                >
                   <Home className="mr-2 h-4 w-4" />
                   Go to Chat
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="h-11 w-full rounded-xl border-white/15 bg-white/5 text-white/85 hover:bg-white/10">
-                <Link to="/memory">Open Memory</Link>
-              </Button>
+                </Button>
+              </Link>
+              <Link to="/memory" className="w-full">
+                <Button variant="outline" className="h-11 w-full rounded-xl border-white/15 bg-white/5 text-white/85 hover:bg-white/10">
+                  Open Memory
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>

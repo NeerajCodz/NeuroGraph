@@ -11,6 +11,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from src.core.config import get_settings
 from src.core.exceptions import ConnectionError, PostgresError
 from src.core.logging import get_logger
+from src.db.postgres.bootstrap import ensure_runtime_schema
 
 logger = get_logger(__name__)
 
@@ -64,6 +65,8 @@ class PostgresDriver:
                     max_size=self._settings.postgres_max_pool_size,
                     init=self._init_connection,
                 )
+                async with self._pool.acquire() as conn:
+                    await ensure_runtime_schema(conn)
                 self._pool_loop = current_loop
                 logger.info(
                     "postgres_connected",

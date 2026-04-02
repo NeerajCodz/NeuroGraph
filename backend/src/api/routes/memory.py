@@ -932,16 +932,21 @@ async def get_memory_detail(
     # Parse embedding string to get preview
     embedding_preview: list[float] = []
     embedding_dim = 0
-    if row["embedding"]:
+    embedding_value = row["embedding"]
+    if embedding_value is not None:
         try:
-            # pgvector returns as string like "[0.1,0.2,...]"
-            emb_str = str(row["embedding"])
-            if emb_str.startswith("[") and emb_str.endswith("]"):
-                parts = emb_str[1:-1].split(",")
-                embedding_dim = len(parts)
-                embedding_preview = [float(p) for p in parts[:10]]
-        except Exception:
-            pass
+            # pgvector may return string/list/ndarray depending on driver adaptation.
+            if isinstance(embedding_value, (list, tuple)):
+                embedding_dim = len(embedding_value)
+                embedding_preview = [float(value) for value in embedding_value[:10]]
+            else:
+                emb_str = str(embedding_value)
+                if emb_str.startswith("[") and emb_str.endswith("]"):
+                    parts = [part for part in emb_str[1:-1].split(",") if part]
+                    embedding_dim = len(parts)
+                    embedding_preview = [float(part) for part in parts[:10]]
+        except (TypeError, ValueError) as e:
+            logger.warning("memory_embedding_preview_parse_failed", memory_id=str(id), error=str(e))
 
     metadata = row["metadata"] if isinstance(row["metadata"], dict) else {}
 
