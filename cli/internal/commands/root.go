@@ -230,6 +230,7 @@ func newQuickRecallCmd() *cobra.Command {
 			}
 
 			layers := []string{mapLayer(rt.cfg.Defaults.Layer)}
+			layers = normalizeLayerList(layers)
 			if rt.useMCP {
 				argsMap := map[string]any{
 					"query":           strings.Join(args, " "),

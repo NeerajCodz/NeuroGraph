@@ -217,3 +217,26 @@ func mcpInvokeJSON(ctx context.Context, rt *runtime, toolName string, arguments 
 	}
 	return nil
 }
+
+func normalizeLayerList(layers []string) []string {
+	if len(layers) == 0 {
+		return []string{"personal"}
+	}
+	out := make([]string, 0, len(layers))
+	seen := map[string]struct{}{}
+	for _, layer := range layers {
+		mapped := mapLayer(layer)
+		if mapped == "" {
+			mapped = "personal"
+		}
+		if _, ok := seen[mapped]; ok {
+			continue
+		}
+		seen[mapped] = struct{}{}
+		out = append(out, mapped)
+	}
+	if len(out) == 0 {
+		return []string{"personal"}
+	}
+	return out
+}

@@ -291,16 +291,31 @@ export function AppSidebar() {
                   <SidebarGroupContent className="min-h-0">
                     <SidebarMenu className="max-h-[44vh] overflow-y-auto px-2 pb-1">
                       {previousChats.slice(0, 30).map((chat) => (
-                        <SidebarMenuItem key={chat.id}>
+                        <SidebarMenuItem key={chat.id} className="relative group">
                           <SidebarMenuButton
                             tooltip={chat.title}
                             onClick={() => navigate('/chat/' + chat.id)}
                             isActive={location.pathname === '/chat/' + chat.id}
-                            className="h-8 rounded-xl text-white/75 hover:text-white"
+                            className="h-8 rounded-xl text-white/75 hover:text-white pr-8"
                           >
                             <History className="h-3.5 w-3.5" />
                             <span className="truncate text-xs">{chat.title}</span>
                           </SidebarMenuButton>
+                          
+                          <DropdownMenu>
+                            <DropdownMenuTrigger className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-white/10 flex items-center justify-center">
+                              <MoreVertical className="h-3 w-3 text-white/60" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-48 bg-[#110825] border-white/10" align="end">
+                              <DropdownMenuItem
+                                onClick={(e) => handleDeleteConversation(chat.id, chat.title, e)}
+                                className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete conversation
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </SidebarMenuItem>
                       ))}
                       {previousChats.length === 0 && (

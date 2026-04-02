@@ -542,6 +542,7 @@ async def _authenticate_api_key(api_key: str) -> dict[str, Any]:
             api_key,
         )
         
+        row_for_mode = row
         if not row:
             # Try direct key match (for development)
             row = await conn.fetchrow(
@@ -553,6 +554,29 @@ async def _authenticate_api_key(api_key: str) -> dict[str, Any]:
                   AND ak.is_active = true
                 """,
                 api_key[:8] if len(api_key) >= 8 else api_key,
+            )
+            row_for_mode = row
+        
+        workspace_row = None
+        if row_for_mode:
+            workspace_row = await conn.fetchrow(
+                """
+                SELECT workspace_id
+                FROM (
+                    SELECT wm.workspace_id AS workspace_id
+                    FROM chat.workspace_members wm
+                    JOIN chat.workspaces w ON w.id = wm.workspace_id
+                    WHERE wm.user_id = $1
+                      AND w.status = 'active'
+                    UNION
+                    SELECT tm.tenant_id AS workspace_id
+                    FROM auth.tenant_members tm
+                    WHERE tm.user_id = $1
+                ) ws
+                ORDER BY workspace_id
+                LIMIT 1
+                """,
+                row_for_mode["user_id"],
             )
         
         if row:
@@ -568,6 +592,20 @@ async def _authenticate_api_key(api_key: str) -> dict[str, Any]:
             _session_state["api_key"] = api_key
             _session_state["access_token"] = minted_access_token
             _session_state["initialized"] = True
+            if row["tenant_id"]:
+                _session_state["mode"] = "workspace"
+            elif workspace_row and workspace_row["workspace_id"]:
+                _session_state["mode"] = "workspace"
+                workspace_id = workspace_row["workspace_id"]
+                if isinstance(workspace_id, UUID):
+                    _session_state["tenant_id"] = workspace_id
+                else:
+                    try:
+                        _session_state["tenant_id"] = UUID(str(workspace_id))
+                    except ValueError:
+                        _session_state["tenant_id"] = None
+            else:
+                _session_state["mode"] = "personal"
             
             logger.info(
                 "mcp_authenticated",
@@ -605,6 +643,7 @@ async def _authenticate_token(access_token: str) -> dict[str, Any]:
         _session_state["tenant_id"] = tenant_id
         _session_state["api_key"] = None
         _session_state["access_token"] = access_token
+        _session_state["mode"] = "workspace" if tenant_id else "personal"
         _session_state["initialized"] = True
         
         logger.info("mcp_authenticated_jwt", user_id=str(user_id))
@@ -800,8 +839,8 @@ async def neurograph_recall(params: RecallInput) -> str:
                     {
                         "id": str(r.get("id")),
                         "content": r.get("content", ""),
-                        "score": round(float(r.get("score", 0.0)), 3),
-                        "confidence": round(float(r.get("confidence", 0.0)), 2),
+                        "score": round(_to_float(r.get("score"), 0.0), 3),
+                        "confidence": round(_to_float(r.get("confidence"), 0.0), 2),
                         "layer": r.get("layer"),
                     }
                     for r in results
@@ -813,9 +852,9 @@ async def neurograph_recall(params: RecallInput) -> str:
         lines.append(f"Found **{len(results)}** relevant memories:\n")
         
         for i, r in enumerate(results, 1):
-            score = float(r.get("score", 0.0))
+            score = _to_float(r.get("score"), 0.0)
             content = str(r.get("content", ""))
-            confidence = float(r.get("confidence", 0.0))
+            confidence = _to_float(r.get("confidence"), 0.0)
             lines.append(f"### {i}. [{score:.2f}] {content[:100]}{'...' if len(content) > 100 else ''}")
             lines.append(f"- Layer: `{r.get('layer', 'personal')}` | Confidence: {confidence:.0%}")
             lines.append("")
@@ -866,6 +905,8 @@ async def neurograph_search(params: SearchInput) -> str:
         query_params: list[tuple[str, str]] = [("q", params.query), ("limit", str(params.limit))]
         for layer in layers:
             query_params.append(("layers", layer))
+        if params.offset > 0:
+            query_params.append(("offset", str(params.offset)))
         if workspace_id:
             query_params.append(("workspace_id", workspace_id))
 
@@ -886,7 +927,7 @@ async def neurograph_search(params: SearchInput) -> str:
                     {
                         "id": str(r.get("id")),
                         "content": r.get("content", ""),
-                        "score": round(float(r.get("score", 0.0)), 3),
+                        "score": round(_to_float(r.get("score"), 0.0), 3),
                         "layer": r.get("layer"),
                     }
                     for r in results
@@ -898,7 +939,7 @@ async def neurograph_search(params: SearchInput) -> str:
         lines.append(f"Query: \"{params.query}\" | Type: {params.search_type.value}\n")
         
         for i, r in enumerate(results, 1):
-            score = float(r.get("score", 0.0))
+            score = _to_float(r.get("score"), 0.0)
             content = str(r.get("content", ""))
             lines.append(f"{i}. **[{score:.2f}]** {content[:150]}...")
         
@@ -1008,7 +1049,7 @@ async def neurograph_list_memories(params: ListMemoriesInput) -> str:
                     {
                         "id": str(r.get("id")),
                         "content": str(r.get("content", ""))[:200],
-                        "confidence": float(r.get("confidence", 0.0)),
+                        "confidence": _to_float(r.get("confidence"), 0.0),
                         "created_at": str(r.get("created_at")),
                     }
                     for r in rows
@@ -1212,7 +1253,7 @@ async def neurograph_traverse_graph(params: TraverseGraphInput) -> str:
                 source_id = str(rel.get("source_id", ""))
                 target_id = str(rel.get("target_id", ""))
                 rel_type = str(rel.get("type", "RELATED_TO"))
-                confidence = float(rel.get("confidence", 1.0))
+                confidence = _to_float(rel.get("confidence"), 1.0)
 
                 if source_id == current and target_id:
                     next_node = target_id
@@ -1340,10 +1381,11 @@ async def neurograph_explain(params: ExplainNodeInput) -> str:
                 source = str(conn.get("source_id", ""))
                 target = str(conn.get("target_id", ""))
                 relation = str(conn.get("type", "RELATED_TO"))
-                confidence = conn.get("confidence", 0.8)
+                confidence = _to_float(conn.get("confidence"), 0.8)
                 reason = conn.get("reason", "")
-                direction = "→" if source == params.node_id else "←"
-                connected_to = target if source == params.node_id else source
+                node_id_text = str(params.node_id)
+                direction = "→" if source == node_id_text else "←"
+                connected_to = target if source == node_id_text else source
                 
                 lines.append(
                     f"- {direction} **{relation}** {direction} "

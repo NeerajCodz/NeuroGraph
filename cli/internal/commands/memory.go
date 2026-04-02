@@ -120,9 +120,7 @@ func newMemoryRecallCmd() *cobra.Command {
 			}
 
 			layers := splitCSV(firstNonEmpty(layersCSV, rt.cfg.Defaults.Layer))
-			for i := range layers {
-				layers[i] = mapLayer(layers[i])
-			}
+			layers = normalizeLayerList(layers)
 			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
 			if rt.useMCP {
 				argsMap := map[string]any{
@@ -222,9 +220,7 @@ func newMemorySearchCmd() *cobra.Command {
 			}
 
 			layers := splitCSV(firstNonEmpty(layersCSV, rt.cfg.Defaults.Layer))
-			for i := range layers {
-				layers[i] = mapLayer(layers[i])
-			}
+			layers = normalizeLayerList(layers)
 			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
 			if rt.useMCP {
 				argsMap := map[string]any{
