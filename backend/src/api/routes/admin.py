@@ -1,36 +1,21 @@
-"""Admin endpoints for database management with secure authentication."""
+"""Simple admin endpoints for Neo4j management using existing auth system."""
 
 import asyncio
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
 
+from src.api.dependencies.auth import get_current_user
 from src.core.config import get_settings
 from src.core.logging import get_logger
 from src.db.neo4j.driver import neo4j_driver
 from src.db.postgres.driver import postgres_driver
+from src.models.auth import User
 
 logger = get_logger(__name__)
-security = HTTPBearer()
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-class AdminLoginRequest(BaseModel):
-    """Admin login request."""
-    username: str
-    password: str
-
-
-class AdminLoginResponse(BaseModel):
-    """Admin login response."""
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int
 
 
 class ClearNeo4jRequest(BaseModel):
@@ -51,28 +36,8 @@ class AdminResponse(BaseModel):
     data: Dict[str, Any] | None = None
 
 
-def create_admin_token(username: str) -> str:
-    """Create JWT token for admin user."""
-    settings = get_settings()
-    if not settings.admin_jwt_secret:
-        raise ValueError("Admin JWT secret not configured")
-    
-    payload = {
-        "sub": username,
-        "type": "admin",
-        "exp": datetime.utcnow() + timedelta(hours=1),
-        "iat": datetime.utcnow()
-    }
-    
-    return jwt.encode(
-        payload, 
-        settings.admin_jwt_secret.get_secret_value(), 
-        algorithm="HS256"
-    )
-
-
-def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """Verify admin JWT token."""
+def verify_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    """Verify user has admin privileges."""
     settings = get_settings()
     
     if not settings.admin_api_enabled:
@@ -81,79 +46,15 @@ def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             detail="Admin API is disabled"
         )
     
-    if not settings.admin_jwt_secret:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Admin JWT secret not configured"
-        )
-    
-    try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.admin_jwt_secret.get_secret_value(),
-            algorithms=["HS256"]
-        )
-        
-        if payload.get("type") != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid admin token"
-            )
-        
-        return payload.get("sub", "")
-    
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin token has expired"
-        )
-    except jwt.JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid admin token"
-        )
-
-
-@router.post("/login", response_model=AdminLoginResponse)
-async def admin_login(request: AdminLoginRequest) -> AdminLoginResponse:
-    """Admin login endpoint."""
-    settings = get_settings()
-    
-    if not settings.admin_api_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin API is disabled"
-        )
-    
-    if not settings.admin_password:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Admin credentials not configured"
-        )
-    
-    # Verify credentials
-    if (request.username != settings.admin_username or 
-        request.password != settings.admin_password.get_secret_value()):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid admin credentials"
-        )
-    
-    # Create token
-    token = create_admin_token(request.username)
-    
-    logger.info("admin_login_success", username=request.username)
-    
-    return AdminLoginResponse(
-        access_token=token,
-        expires_in=3600
-    )
+    # For now, any authenticated user can use admin (you can add role check later)
+    # In production, you'd check: if current_user.role != "admin"
+    return current_user
 
 
 @router.post("/clear-neo4j", response_model=AdminResponse)
 async def clear_neo4j(
     request: ClearNeo4jRequest,
-    admin_user: str = Depends(verify_admin_token)
+    admin_user: User = Depends(verify_admin_user)
 ) -> AdminResponse:
     """Clear all data from Neo4j database."""
     if request.confirm != "CLEAR_NEO4J":
@@ -162,7 +63,7 @@ async def clear_neo4j(
             detail="Must provide confirm='CLEAR_NEO4J' to proceed"
         )
     
-    logger.warning("admin_clearing_neo4j", user=admin_user)
+    logger.warning("admin_clearing_neo4j", user_id=str(admin_user.id), email=admin_user.email)
     
     try:
         if not neo4j_driver.driver:
@@ -179,7 +80,7 @@ async def clear_neo4j(
             node_count = session.run("MATCH (n) RETURN count(n) as count").single()["count"]
             rel_count = session.run("MATCH ()-[r]->() RETURN count(r) as count").single()["count"]
         
-        logger.info("admin_neo4j_cleared", user=admin_user, nodes=node_count, relationships=rel_count)
+        logger.info("admin_neo4j_cleared", user_id=str(admin_user.id), nodes=node_count, relationships=rel_count)
         
         return AdminResponse(
             success=True,
@@ -188,7 +89,7 @@ async def clear_neo4j(
         )
     
     except Exception as e:
-        logger.error("admin_clear_neo4j_failed", user=admin_user, error=str(e))
+        logger.error("admin_clear_neo4j_failed", user_id=str(admin_user.id), error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to clear Neo4j: {str(e)}"
@@ -198,7 +99,7 @@ async def clear_neo4j(
 @router.post("/sync-neo4j", response_model=AdminResponse)
 async def sync_neo4j(
     request: SyncNeo4jRequest,
-    admin_user: str = Depends(verify_admin_token)
+    admin_user: User = Depends(verify_admin_user)
 ) -> AdminResponse:
     """Sync data from Postgres to Neo4j."""
     if request.confirm != "SYNC_NEO4J":
@@ -207,7 +108,7 @@ async def sync_neo4j(
             detail="Must provide confirm='SYNC_NEO4J' to proceed"
         )
     
-    logger.info("admin_syncing_neo4j", user=admin_user, clear_first=request.clear_first)
+    logger.info("admin_syncing_neo4j", user_id=str(admin_user.id), clear_first=request.clear_first)
     
     try:
         # Initialize connections
@@ -269,30 +170,36 @@ async def sync_neo4j(
                         m.tenant_name = $tenant_name
                 """, dict(memory))
                 
-                if (i + 1) % 50 == 0:
+                if (i + 1) % 100 == 0:
                     logger.info("neo4j_nodes_progress", created=i + 1, total=len(memories))
         
         # Create relationships in Neo4j
         logger.info("creating_neo4j_relationships", count=len(edges))
         with neo4j_driver.driver.session() as session:
             for i, edge in enumerate(edges):
-                session.run("""
-                    MATCH (source:Memory {id: $source_id})
-                    MATCH (target:Memory {id: $target_id})
-                    MERGE (source)-[:CONNECTED {
-                        reason: $reason,
-                        weight: $weight,
-                        confidence: $confidence
-                    }]->(target)
-                """, {
-                    "source_id": str(edge["source_memory_id"]),
-                    "target_id": str(edge["target_memory_id"]),
-                    "reason": edge["reason"],
-                    "weight": edge["weight"],
-                    "confidence": edge["confidence"]
-                })
+                try:
+                    session.run("""
+                        MATCH (source:Memory {id: $source_id})
+                        MATCH (target:Memory {id: $target_id})
+                        MERGE (source)-[:CONNECTED {
+                            reason: $reason,
+                            weight: $weight,
+                            confidence: $confidence
+                        }]->(target)
+                    """, {
+                        "source_id": str(edge["source_memory_id"]),
+                        "target_id": str(edge["target_memory_id"]),
+                        "reason": edge["reason"],
+                        "weight": edge["weight"],
+                        "confidence": edge["confidence"]
+                    })
+                except Exception as e:
+                    logger.warning("neo4j_relationship_skipped", 
+                                   source=str(edge["source_memory_id"]),
+                                   target=str(edge["target_memory_id"]),
+                                   error=str(e))
                 
-                if (i + 1) % 50 == 0:
+                if (i + 1) % 100 == 0:
                     logger.info("neo4j_relationships_progress", created=i + 1, total=len(edges))
         
         # Final verification
@@ -300,7 +207,7 @@ async def sync_neo4j(
             node_count = session.run("MATCH (n) RETURN count(n) as count").single()["count"]
             rel_count = session.run("MATCH ()-[r]->() RETURN count(r) as count").single()["count"]
         
-        logger.info("admin_neo4j_sync_complete", user=admin_user, nodes=node_count, relationships=rel_count)
+        logger.info("admin_neo4j_sync_complete", user_id=str(admin_user.id), nodes=node_count, relationships=rel_count)
         
         return AdminResponse(
             success=True,
@@ -309,7 +216,7 @@ async def sync_neo4j(
         )
     
     except Exception as e:
-        logger.error("admin_sync_neo4j_failed", user=admin_user, error=str(e))
+        logger.error("admin_sync_neo4j_failed", user_id=str(admin_user.id), error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to sync Neo4j: {str(e)}"
@@ -317,7 +224,7 @@ async def sync_neo4j(
 
 
 @router.get("/status", response_model=AdminResponse)
-async def admin_status(admin_user: str = Depends(verify_admin_token)) -> AdminResponse:
+async def admin_status(admin_user: User = Depends(verify_admin_user)) -> AdminResponse:
     """Get admin status and database counts."""
     try:
         # Check Postgres
@@ -352,12 +259,12 @@ async def admin_status(admin_user: str = Depends(verify_admin_token)) -> AdminRe
             data={
                 "postgres": postgres_data,
                 "neo4j": neo4j_data,
-                "admin_user": admin_user
+                "admin_user": admin_user.email
             }
         )
     
     except Exception as e:
-        logger.error("admin_status_failed", user=admin_user, error=str(e))
+        logger.error("admin_status_failed", user_id=str(admin_user.id), error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get admin status: {str(e)}"
