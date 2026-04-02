@@ -71,7 +71,7 @@ async def sync_neo4j(
         async with postgres.connection() as conn:
             memories = await conn.fetch("""
                 SELECT id, node_id, content, layer, user_id, created_at
-                FROM memory.embeddings ORDER BY created_at LIMIT 50
+                FROM memory.embeddings ORDER BY created_at LIMIT 200
             """)
         
         # Clear and sync a subset to Neo4j (minimal test)
