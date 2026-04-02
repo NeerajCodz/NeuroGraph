@@ -11,6 +11,12 @@ logger = get_logger(__name__)
 
 BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     """
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp"
+    """,
+    """
+    CREATE EXTENSION IF NOT EXISTS pgcrypto
+    """,
+    """
     CREATE SCHEMA IF NOT EXISTS chat
     """,
     """
@@ -24,7 +30,7 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS chat.workspaces (
-        id UUID PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name VARCHAR(255) NOT NULL,
         description TEXT,
         owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -51,7 +57,7 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS chat.conversations (
-        id UUID PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         workspace_id UUID REFERENCES chat.workspaces(id) ON DELETE CASCADE,
         user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
         title VARCHAR(255),
@@ -67,7 +73,7 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS chat.messages (
-        id UUID PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         conversation_id UUID NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
         role VARCHAR(20) NOT NULL,
         content TEXT NOT NULL,
@@ -83,7 +89,7 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS chat.processing_steps (
-        id UUID PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         message_id UUID REFERENCES chat.messages(id) ON DELETE CASCADE,
         conversation_id UUID NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
         step_number INTEGER NOT NULL,
@@ -112,6 +118,7 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     )
     """,
     # Workspaces compatibility columns.
+    "ALTER TABLE chat.workspaces ALTER COLUMN id SET DEFAULT gen_random_uuid()",
     "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)",
     "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
     "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'",
@@ -126,6 +133,7 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE chat.workspace_members ADD COLUMN IF NOT EXISTS can_write BOOLEAN DEFAULT TRUE",
     "ALTER TABLE chat.workspace_members ADD COLUMN IF NOT EXISTS joined_at TIMESTAMPTZ DEFAULT NOW()",
     # Conversations compatibility columns.
+    "ALTER TABLE chat.conversations ALTER COLUMN id SET DEFAULT gen_random_uuid()",
     "ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS summary TEXT",
     "ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS message_count INTEGER DEFAULT 0",
     "ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE",
@@ -135,6 +143,7 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
     "ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
     # Messages compatibility columns.
+    "ALTER TABLE chat.messages ALTER COLUMN id SET DEFAULT gen_random_uuid()",
     "ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS provider VARCHAR(50)",
     "ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS model VARCHAR(100)",
     "ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS tokens_used INTEGER",
@@ -144,6 +153,7 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'",
     "ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
     # Processing step compatibility columns.
+    "ALTER TABLE chat.processing_steps ALTER COLUMN id SET DEFAULT gen_random_uuid()",
     "ALTER TABLE chat.processing_steps ADD COLUMN IF NOT EXISTS message_id UUID REFERENCES chat.messages(id) ON DELETE CASCADE",
     "ALTER TABLE chat.processing_steps ADD COLUMN IF NOT EXISTS conversation_id UUID REFERENCES chat.conversations(id) ON DELETE CASCADE",
     "ALTER TABLE chat.processing_steps ADD COLUMN IF NOT EXISTS step_number INTEGER",
