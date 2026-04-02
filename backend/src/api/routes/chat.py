@@ -1005,39 +1005,57 @@ async def stream_chat(
                     connection_details: list[dict] = []
                     
                     try:
-                        # Get memory IDs from results
-                        memory_ids = [m.node_id for m in memory_results[:10]]
+                        # Hybrid search returns node_id (string), but canvas_edges references UUID memory IDs.
+                        memory_node_ids = [str(m.node_id) for m in memory_results[:10] if getattr(m, "node_id", None)]
                         
                         async with postgres.connection() as conn:
-                            # Query canvas_edges for connections between found memories
-                            # and also connections FROM found memories to other memories
-                            edges_query = """
-                            WITH source_memories AS (
-                                SELECT UNNEST($1::uuid[]) AS mem_id
+                            memory_id_rows = await conn.fetch(
+                                """
+                                SELECT id
+                                FROM memory.embeddings
+                                WHERE node_id = ANY($1::text[])
+                                LIMIT 50
+                                """,
+                                memory_node_ids,
                             )
-                            SELECT 
-                                ce.id AS edge_id,
-                                ce.source_memory_id,
-                                ce.target_memory_id,
-                                ce.reason,
-                                ce.confidence AS edge_confidence,
-                                ce.weight,
-                                ce.connection_count,
-                                source_mem.content AS source_content,
-                                source_mem.embedding AS source_embedding,
-                                target_mem.content AS target_content,
-                                target_mem.embedding AS target_embedding,
-                                target_mem.layer AS target_layer
-                            FROM memory.canvas_edges ce
-                            JOIN memory.embeddings source_mem ON ce.source_memory_id = source_mem.id
-                            JOIN memory.embeddings target_mem ON ce.target_memory_id = target_mem.id
-                            WHERE ce.source_memory_id = ANY($1::uuid[])
-                               OR ce.target_memory_id = ANY($1::uuid[])
-                            ORDER BY ce.weight DESC, ce.connection_count DESC
-                            LIMIT 15
-                            """
+                            memory_ids = [row["id"] for row in memory_id_rows]
                             
-                            edge_records = await conn.fetch(edges_query, memory_ids)
+                            if not memory_ids:
+                                connection_details.append({
+                                    "type": "info",
+                                    "content": "No connected memories found for selected nodes"
+                                })
+                                edge_records = []
+                            else:
+                                # Query canvas_edges for connections between found memories
+                                # and also connections FROM found memories to other memories
+                                edges_query = """
+                                WITH source_memories AS (
+                                    SELECT UNNEST($1::uuid[]) AS mem_id
+                                )
+                                SELECT 
+                                    ce.id AS edge_id,
+                                    ce.source_memory_id,
+                                    ce.target_memory_id,
+                                    ce.reason,
+                                    ce.confidence AS edge_confidence,
+                                    ce.weight,
+                                    ce.connection_count,
+                                    source_mem.content AS source_content,
+                                    source_mem.embedding AS source_embedding,
+                                    target_mem.content AS target_content,
+                                    target_mem.embedding AS target_embedding,
+                                    target_mem.layer AS target_layer
+                                FROM memory.canvas_edges ce
+                                JOIN memory.embeddings source_mem ON ce.source_memory_id = source_mem.id
+                                JOIN memory.embeddings target_mem ON ce.target_memory_id = target_mem.id
+                                WHERE ce.source_memory_id = ANY($1::uuid[])
+                                   OR ce.target_memory_id = ANY($1::uuid[])
+                                ORDER BY ce.weight DESC, ce.connection_count DESC
+                                LIMIT 15
+                                """
+                                
+                                edge_records = await conn.fetch(edges_query, memory_ids)
                             
                             connection_details.append({
                                 "type": "info", 
