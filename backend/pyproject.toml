@@ -42,6 +42,7 @@ dependencies = [
     # LLM clients
     "google-genai>=1.0.0",
     "groq>=0.12.0",
+    "openai>=1.0.0",
     "httpx>=0.28.0",
     
     # Embeddings and ML

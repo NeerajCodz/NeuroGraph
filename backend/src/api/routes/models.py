@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from src.api.dependencies import get_current_user
 from src.models.unified_llm import get_unified_llm, AVAILABLE_MODELS, LLMProvider
-from src.models.nvidia import get_available_nvidia_models, NVIDIA_MODELS
+from src.models.nvidia import get_available_nvidia_models, NVIDIA_MODELS, is_nvidia_sdk_available
 from src.core.logging import get_logger
 from src.db.postgres import get_postgres_driver
 
@@ -93,6 +93,7 @@ async def list_nvidia_models(current_user = Depends(get_current_user)):
         "provider": "nvidia",
         "models": get_available_nvidia_models(),
         "base_url": "https://integrate.api.nvidia.com/v1",
+        "sdk_available": is_nvidia_sdk_available(),
         "reasoning_models": reasoning_models,
         "code_models": ["devstral-2-123b"],
     }

@@ -16,6 +16,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
+import { useRouteSeo } from '@/lib/seo';
 
 // Protected route wrapper
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -115,21 +116,33 @@ function App() {
       <AuthProvider>
         <ThemeProvider>
           <TooltipProvider>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/404" element={<NotFound />} />
-              <Route path="/*" element={
-                <RequireAuth>
-                  <Layout />
-                </RequireAuth>
-              } />
-            </Routes>
+            <AppRoutes />
           </TooltipProvider>
         </ThemeProvider>
       </AuthProvider>
     </Router>
+  );
+}
+
+function AppRoutes() {
+  const location = useLocation();
+  useRouteSeo(location.pathname);
+
+  return (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/404" element={<NotFound />} />
+      <Route
+        path="/*"
+        element={(
+          <RequireAuth>
+            <Layout />
+          </RequireAuth>
+        )}
+      />
+    </Routes>
   );
 }
 

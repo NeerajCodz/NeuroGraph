@@ -6,6 +6,7 @@ from enum import Enum
 from src.core.config import get_settings
 from src.core.exceptions import LLMError
 from src.core.logging import get_logger
+from src.models.nvidia import is_nvidia_sdk_available
 
 logger = get_logger(__name__)
 
@@ -92,7 +93,7 @@ class UnifiedLLM:
             "id": "nvidia",
             "name": "NVIDIA AI",
             "models": AVAILABLE_MODELS[LLMProvider.NVIDIA],
-            "is_available": bool(self._settings.nvidia_api_key),
+            "is_available": bool(self._settings.nvidia_api_key) and is_nvidia_sdk_available(),
         })
         
         # Groq

@@ -1,5 +1,6 @@
 """Memory routes for CRUD operations."""
 
+import asyncio
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID, uuid4
@@ -10,15 +11,19 @@ from pydantic import BaseModel, Field
 
 from src.api.dependencies.auth import get_current_user_id
 from src.core.logging import get_logger
-from src.core.config import get_settings
 from src.db.postgres import get_postgres_driver
+from src.memory.enrichment_queue import (
+    build_entity_metadata_patch,
+    enqueue_memory_enrichment,
+    extract_entity_names,
+    merge_entity_metadata,
+)
 from src.rag.embeddings import EmbeddingsService
 from src.rag.hybrid_search import HybridSearch
 from src.models.gemini import get_gemini_client
 
 router = APIRouter()
 logger = get_logger(__name__)
-settings = get_settings()
 
 
 class MemoryCreate(BaseModel):
@@ -64,6 +69,8 @@ class MemorySearchResult(BaseModel):
 _embeddings_service: EmbeddingsService | None = None
 _hybrid_search: HybridSearch | None = None
 _gemini_client = None
+
+ENTITY_EXTRACTION_TIMEOUT_SECONDS = 2.5
 
 
 def get_embeddings_service() -> EmbeddingsService:
@@ -143,8 +150,8 @@ async def remember(
 ) -> MemoryResponse:
     """Store information in memory.
     
-    Extracts entities, generates embeddings, and stores in both
-    Neo4j (relationships) and PostgreSQL (embeddings).
+    Generates embeddings synchronously for immediate recall accuracy.
+    Entity extraction runs in a short inline window, then falls back to queue.
     """
     logger.info(
         "memory_remember",
@@ -173,14 +180,35 @@ async def remember(
         embedding = await embeddings_svc.embed_text(memory.content)
         embedding_list = embedding.tolist()
         
-        # 2. Extract entities using Gemini
+        # 2. Attempt fast entity extraction; defer to queue on timeout/failure
         gemini = get_gemini_client()
+        entity_names: list[str] = []
+        extraction_status = "queued"
+        extraction_source = "queue"
+        extraction_error: str | None = None
+        entities_result: dict | None = None
         try:
-            entities_result = await gemini.extract_entities(memory.content)
+            extracted = await asyncio.wait_for(
+                gemini.extract_entities(memory.content),
+                timeout=ENTITY_EXTRACTION_TIMEOUT_SECONDS,
+            )
+            if isinstance(extracted, dict):
+                entities_result = extracted
+            entity_names = extract_entity_names(entities_result)[:10]
+            extraction_status = "completed"
+            extraction_source = "inline"
+        except asyncio.TimeoutError:
+            extraction_error = (
+                f"entity extraction exceeded {ENTITY_EXTRACTION_TIMEOUT_SECONDS:.1f}s"
+            )
+            logger.warning(
+                "entity_extraction_deferred",
+                reason="timeout",
+                timeout_s=ENTITY_EXTRACTION_TIMEOUT_SECONDS,
+            )
         except Exception as e:
+            extraction_error = str(e)
             logger.warning("entity_extraction_fallback_used", error=str(e))
-            entities_result = {"entities": [], "relationships": []}
-        entity_names = [e.get("name", "unknown") for e in entities_result.get("entities", [])]
         
         # 3. Generate node_id
         memory_id = uuid4()
@@ -192,17 +220,25 @@ async def remember(
         # Format embedding as pgvector string (no spaces)
         embedding_str = "[" + ",".join(map(str, embedding_list)) + "]"
         
-        # Convert metadata to JSON string
+        # Prepare metadata with entity extraction status
         import json
-        metadata_json = json.dumps(memory.metadata or {})
+        metadata_obj = dict(memory.metadata or {})
+        metadata_obj.update(
+            build_entity_metadata_patch(
+                status=extraction_status,
+                source=extraction_source,
+                entities_result=entities_result,
+                error=extraction_error,
+            )
+        )
+        metadata_json = json.dumps(metadata_obj)
         
         async with postgres.connection() as conn:
-            # Use text() style query with proper casting
             await conn.execute(
-                f"""
+                """
                 INSERT INTO memory.embeddings 
                 (id, node_id, layer, user_id, tenant_id, content, embedding, metadata, confidence)
-                VALUES ($1, $2, $3, $4, $5, $6, '{embedding_str}'::vector, $7::jsonb, $8)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8::jsonb, $9)
                 """,
                 memory_id,
                 node_id,
@@ -210,15 +246,36 @@ async def remember(
                 user_id if memory.layer == "personal" else None,
                 workspace_id if memory.layer == "tenant" else None,
                 memory.content,
+                embedding_str,
                 metadata_json,
                 0.95 if memory.layer != "global" else 0.90,
             )
+
+        # Queue deferred enrichment if inline extraction was skipped/failure
+        if extraction_status != "completed":
+            queued = await enqueue_memory_enrichment(
+                memory_id=memory_id,
+                user_id=user_id,
+                layer=memory.layer,
+                tenant_id=workspace_id if memory.layer == "tenant" else None,
+                attempt=1,
+            )
+            if not queued:
+                await merge_entity_metadata(
+                    memory_id,
+                    build_entity_metadata_patch(
+                        status="failed",
+                        source="queue",
+                        error="failed to enqueue enrichment job",
+                    ),
+                )
         
         logger.info(
             "memory_stored",
             memory_id=str(memory_id),
             layer=memory.layer,
             entities_count=len(entity_names),
+            entity_extraction_status=extraction_status,
         )
         
         return MemoryResponse(

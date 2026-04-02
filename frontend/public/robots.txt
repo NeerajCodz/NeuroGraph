@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /chat
+Disallow: /graph
+Disallow: /memory
+Disallow: /profile
+Disallow: /settings
+Disallow: /integrations
+Disallow: /admin
+
+Sitemap: https://neurograph-ai.vercel.app/sitemap.xml

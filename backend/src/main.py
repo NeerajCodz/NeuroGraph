@@ -16,6 +16,10 @@ from src.core.logging import get_logger, setup_logging
 from src.db.neo4j import get_neo4j_driver
 from src.db.postgres import get_postgres_driver
 from src.db.redis import get_redis_driver
+from src.memory.enrichment_queue import (
+    start_memory_enrichment_worker,
+    stop_memory_enrichment_worker,
+)
 
 
 @asynccontextmanager
@@ -40,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.postgres = postgres_driver
     app.state.redis = redis_driver
     
+    await start_memory_enrichment_worker()
     logger.info("databases_connected")
     
     yield
@@ -47,6 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     logger.info("application_shutting_down")
     
+    await stop_memory_enrichment_worker()
     await neo4j_driver.disconnect()
     await postgres_driver.disconnect()
     await redis_driver.disconnect()

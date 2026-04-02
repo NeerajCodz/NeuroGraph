@@ -1,7 +1,7 @@
 """Chat routes with orchestration."""
 
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 import json
 import time
@@ -30,6 +30,118 @@ def _parse_json_list(value: object) -> list:
             return []
         return parsed if isinstance(parsed, list) else []
     return []
+
+
+def _provider_candidate_order(requested_provider: str) -> list[str]:
+    """Build ordered provider candidates for failover attempts."""
+    requested = requested_provider.lower().strip()
+    ordered = [requested, "gemini", "groq", "nvidia"]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for provider in ordered:
+        if provider not in seen:
+            seen.add(provider)
+            deduped.append(provider)
+    return deduped
+
+
+def _default_model_for_provider(provider: str, settings: Any) -> str:
+    """Resolve default model for a specific provider."""
+    if provider == "gemini":
+        return settings.gemini_model_flash
+    if provider == "groq":
+        return settings.groq_model
+    if provider == "nvidia":
+        return "devstral-2-123b"
+    return settings.default_llm_model
+
+
+def _is_provider_configured(
+    provider: str,
+    settings: Any,
+    llm: Any,
+    key_override: str | None,
+) -> bool:
+    """Check whether a provider is usable for this request."""
+    if provider == "gemini":
+        return bool(key_override) or bool(settings.gemini_api_key)
+    if provider == "groq":
+        return bool(key_override) or bool(settings.groq_api_key)
+    if provider == "nvidia":
+        if key_override:
+            from src.models.nvidia import is_nvidia_sdk_available
+
+            return is_nvidia_sdk_available()
+        return llm._get_nvidia().is_available
+    return False
+
+
+async def _generate_with_failover(
+    *,
+    llm: Any,
+    user_prompt: str,
+    system_prompt: str,
+    requested_provider: str,
+    requested_model: str | None,
+    settings: Any,
+    custom_provider_keys: dict[str, str],
+) -> tuple[str, str, str, list[dict[str, str]]]:
+    """Generate response with provider failover."""
+    attempts: list[dict[str, str]] = []
+
+    for candidate in _provider_candidate_order(requested_provider):
+        key_override = custom_provider_keys.get(candidate)
+        if not _is_provider_configured(candidate, settings, llm, key_override):
+            attempts.append({"provider": candidate, "error": "not configured"})
+            continue
+
+        model_for_call = (
+            requested_model
+            if candidate == requested_provider.lower() and requested_model
+            else _default_model_for_provider(candidate, settings)
+        )
+
+        try:
+            if candidate == "gemini":
+                response_text = await llm._get_gemini().generate(
+                    prompt=user_prompt,
+                    system_instruction=system_prompt,
+                    model=model_for_call,
+                    api_key=key_override,
+                )
+            elif candidate == "groq":
+                response_text = await llm._get_groq().generate(
+                    prompt=user_prompt,
+                    system_instruction=system_prompt,
+                    model=model_for_call,
+                    api_key=key_override,
+                )
+            elif candidate == "nvidia":
+                response_text = await llm._get_nvidia().generate(
+                    prompt=user_prompt,
+                    system_instruction=system_prompt,
+                    model=model_for_call,
+                    api_key=key_override,
+                )
+            else:
+                attempts.append({"provider": candidate, "error": "unsupported provider"})
+                continue
+
+            return response_text, candidate, model_for_call, attempts
+        except Exception as provider_error:
+            error_text = str(provider_error)
+            logger.warning(
+                "chat_provider_attempt_failed",
+                provider=candidate,
+                model=model_for_call,
+                error=error_text[:200],
+            )
+            attempts.append({"provider": candidate, "error": error_text[:200]})
+
+    attempted = ", ".join(
+        f"{attempt['provider']}: {attempt['error']}" for attempt in attempts
+    )
+    raise RuntimeError(f"No available LLM provider could generate a response ({attempted})")
 
 
 class ChatMessage(BaseModel):
@@ -168,7 +280,6 @@ async def send_message(
         else (preferred_agents_enabled if preferred_agents_enabled is not None else True)
     )
     memory_agent_enabled = bool(user_pref_settings.get("agent_memory_enabled", True))
-    custom_key_override = custom_provider_keys.get(provider.lower())
     
     logger.info(
         "chat_message_received",
@@ -352,34 +463,26 @@ async def send_message(
             )
             confidence = 0.5
 
-        provider_lower = provider.lower()
-        if provider_lower == "gemini":
-            response_text = await llm._get_gemini().generate(
-                prompt=user_prompt,
-                system_instruction=system_prompt,
-                model=model,
-                api_key=custom_key_override,
-            )
-        elif provider_lower == "groq":
-            response_text = await llm._get_groq().generate(
-                prompt=user_prompt,
-                system_instruction=system_prompt,
-                model=model,
-                api_key=custom_key_override,
-            )
-        elif provider_lower == "nvidia":
-            response_text = await llm._get_nvidia().generate(
-                prompt=user_prompt,
-                system_instruction=system_prompt,
-                model=model,
-                api_key=custom_key_override,
-            )
-        else:
-            response_text = await llm.generate(
-                prompt=user_prompt,
-                system_instruction=system_prompt,
-                provider=provider,
-                model=model,
+        requested_provider = provider.lower()
+        response_text, used_provider, used_model, provider_attempts = await _generate_with_failover(
+            llm=llm,
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            requested_provider=requested_provider,
+            requested_model=model,
+            settings=settings,
+            custom_provider_keys=custom_provider_keys,
+        )
+        failover_note = ""
+        if used_provider != requested_provider:
+            failover_note = f" (fallback from {requested_provider}/{model} to {used_provider}/{used_model})"
+            logger.info(
+                "chat_provider_failover_used",
+                requested_provider=requested_provider,
+                requested_model=model,
+                used_provider=used_provider,
+                used_model=used_model,
+                attempts=provider_attempts,
             )
         
         step_duration = int((time.time() - step_start) * 1000)
@@ -387,14 +490,14 @@ async def send_message(
             "step": 4,
             "action": "generate_response",
             "status": "completed",
-            "result": f"Generated using {provider}/{model}",
+            "result": f"Generated using {used_provider}/{used_model}{failover_note}",
             "reasoning": f"{'Used memory context' if context else 'No memory context available'}",
             "duration_ms": step_duration,
         })
         
         await save_processing_step(conversation_id, None, ProcessingStep(
             step=4, action="generating_response", status="completed",
-            result=f"Generated with {model}", duration_ms=step_duration
+            result=f"Generated with {used_provider}/{used_model}", duration_ms=step_duration
         ))
         
         # Save assistant message
@@ -409,8 +512,8 @@ async def send_message(
                 assistant_message_id,
                 conversation_id,
                 response_text,
-                provider,
-                model,
+                used_provider,
+                used_model,
                 confidence,
                 json.dumps(reasoning_path),
                 json.dumps(sources),
@@ -424,8 +527,8 @@ async def send_message(
             sources=sources,
             confidence=confidence,
             created_at=datetime.now(timezone.utc),
-            model_used=model,
-            provider_used=provider,
+            model_used=used_model,
+            provider_used=used_provider,
         )
         
     except HTTPException:
@@ -762,7 +865,6 @@ async def stream_chat(
             )
             # Use request reasoning_model if provided, else fall back to user preference or default
             reasoning_model = message.reasoning_model or str(user_pref_settings.get("reasoning_model", "qwen3-32b"))
-            custom_key_override = custom_provider_keys.get(provider.lower())
 
             # Create/get conversation
             conversation_id = message.conversation_id
@@ -1497,33 +1599,38 @@ async def stream_chat(
 
             # Call LLM
             llm = get_unified_llm()
-            provider_lower = provider.lower()
+            requested_provider = provider.lower()
             
             try:
-                if provider_lower == "gemini":
-                    response_text = await llm._get_gemini().generate(
-                        prompt=user_prompt, system_instruction=system_prompt,
-                        model=model, api_key=custom_key_override,
+                response_text, used_provider, used_model, provider_attempts = await _generate_with_failover(
+                    llm=llm,
+                    user_prompt=user_prompt,
+                    system_prompt=system_prompt,
+                    requested_provider=requested_provider,
+                    requested_model=model,
+                    settings=settings,
+                    custom_provider_keys=custom_provider_keys,
+                )
+                failover_note = ""
+                if used_provider != requested_provider:
+                    failover_note = (
+                        f"Fallback from {requested_provider}/{model} to {used_provider}/{used_model}"
                     )
-                elif provider_lower == "groq":
-                    response_text = await llm._get_groq().generate(
-                        prompt=user_prompt, system_instruction=system_prompt,
-                        model=model, api_key=custom_key_override,
-                    )
-                elif provider_lower == "nvidia":
-                    response_text = await llm._get_nvidia().generate(
-                        prompt=user_prompt, system_instruction=system_prompt,
-                        model=model, api_key=custom_key_override,
-                    )
-                else:
-                    response_text = await llm.generate(
-                        prompt=user_prompt, system_instruction=system_prompt,
-                        provider=provider, model=model,
+                    logger.info(
+                        "stream_chat_provider_failover_used",
+                        requested_provider=requested_provider,
+                        requested_model=model,
+                        used_provider=used_provider,
+                        used_model=used_model,
+                        attempts=provider_attempts,
                     )
             except Exception as llm_err:
                 logger.error("llm_generation_error", error=str(llm_err))
                 response_text = f"I apologize, but I encountered an error generating a response: {str(llm_err)[:100]}"
                 confidence = 0.1
+                used_provider = requested_provider
+                used_model = model
+                failover_note = ""
 
             step_duration = int((time.time() - step_start) * 1000)
             
@@ -1533,15 +1640,17 @@ async def stream_chat(
                 status="completed",
                 description="Response generated successfully",
                 reasoning=f"{'Used memory context with ' + str(len(memory_results)) + ' nodes + ' + str(len(connected_memories)) + ' connected' if context else 'No memory context available'}",
-                result=f"Generated using {provider}/{model}",
+                result=f"Generated using {used_provider}/{used_model}",
                 duration_ms=step_duration,
                 details=[
-                    {"type": "info", "content": f"Provider: {provider}"},
-                    {"type": "info", "content": f"Model: {model}"},
+                    {"type": "info", "content": f"Provider: {used_provider}"},
+                    {"type": "info", "content": f"Model: {used_model}"},
                     {"type": "info", "content": f"Context tokens: ~{len(context) // 4}"},
                     {"type": "result", "content": f"Response generated ({len(response_text)} chars)"}
                 ]
             )
+            if failover_note:
+                step6_complete.details.append({"type": "info", "content": failover_note})
             step_results.append(step6_complete.to_dict())
             yield f"data: {json.dumps({'type': 'step', 'data': step6_complete.to_dict()})}\n\n"
 
@@ -1565,7 +1674,7 @@ async def stream_chat(
                     VALUES ($1, $2, 'assistant', $3, $4, $5, $6, $7, $8)
                     """,
                     assistant_message_id, conversation_id, response_text,
-                    provider, model, confidence,
+                    used_provider, used_model, confidence,
                     json.dumps(step_results), json.dumps(sources),
                 )
 
@@ -1577,8 +1686,8 @@ async def stream_chat(
                     "conversation_id": str(conversation_id),
                     "content": response_text,
                     "confidence": confidence,
-                    "model_used": model,
-                    "provider_used": provider,
+                    "model_used": used_model,
+                    "provider_used": used_provider,
                     "sources": sources,
                     "processing_steps": step_results,
                     "graph_paths": graph_paths[:5],

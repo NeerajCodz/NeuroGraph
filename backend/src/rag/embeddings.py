@@ -59,7 +59,7 @@ class EmbeddingsService:
             await self._redis.set(
                 cache_key, 
                 json.dumps(embedding.tolist()),
-                ex=EMBEDDING_CACHE_TTL
+                expire=EMBEDDING_CACHE_TTL
             )
             logger.debug("embedding_cached", text_len=len(text))
         except Exception as e:

@@ -15,6 +15,12 @@ from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+
+def is_nvidia_sdk_available() -> bool:
+    """Return whether NVIDIA OpenAI-compatible SDK dependency is installed."""
+    return AsyncOpenAI is not None
+
+
 # Available NVIDIA models with their configurations
 NVIDIA_MODELS = {
     # Reasoning models (with thinking/reasoning traces)
@@ -126,6 +132,11 @@ class NvidiaClient:
             )
         else:
             self._client = None
+            if api_key and AsyncOpenAI is None:
+                logger.warning(
+                    "nvidia_sdk_missing",
+                    reason="NVIDIA key is configured but openai package is not installed",
+                )
         self._last_call_time = 0.0
 
     def _build_client(self, api_key: str | None = None) -> Any:
@@ -133,7 +144,8 @@ class NvidiaClient:
         if api_key:
             if AsyncOpenAI is None:
                 raise LLMError(
-                    "NVIDIA provider requires 'openai' package. Install it in backend environment."
+                    "NVIDIA provider requires 'openai' package. Install it in backend runtime.",
+                    provider="nvidia",
                 )
             return AsyncOpenAI(
                 base_url=self._settings.nvidia_base_url,
@@ -141,10 +153,24 @@ class NvidiaClient:
             )
         return self._client
 
+    def _unavailable_reason(self, api_key: str | None = None) -> str:
+        """Build a precise unavailable reason for NVIDIA provider failures."""
+        if AsyncOpenAI is None:
+            return "NVIDIA provider unavailable: openai package is not installed in backend runtime."
+        if api_key:
+            return "NVIDIA provider unavailable for custom key."
+        if not self._settings.nvidia_api_key:
+            return "NVIDIA API not configured. Set NVIDIA_API_KEY."
+        return "NVIDIA provider client is unavailable."
+
     @property
     def is_available(self) -> bool:
         """Check if NVIDIA API is configured."""
-        return self._client is not None
+        return (
+            self._client is not None
+            and AsyncOpenAI is not None
+            and bool(self._settings.nvidia_api_key)
+        )
 
     async def _rate_limit_delay(self) -> None:
         """Ensure minimum delay between API calls."""
@@ -184,7 +210,11 @@ class NvidiaClient:
         """
         client = self._build_client(api_key)
         if client is None:
-            raise LLMError("NVIDIA API not configured. Set NVIDIA_API_KEY.")
+            raise LLMError(
+                self._unavailable_reason(api_key),
+                provider="nvidia",
+                model=model,
+            )
         
         model_config = NVIDIA_MODELS.get(model)
         if not model_config:
@@ -249,7 +279,11 @@ class NvidiaClient:
         """
         client = self._build_client(api_key)
         if client is None:
-            raise LLMError("NVIDIA API not configured. Set NVIDIA_API_KEY.")
+            raise LLMError(
+                self._unavailable_reason(api_key),
+                provider="nvidia",
+                model=model,
+            )
         
         model_config = NVIDIA_MODELS.get(model)
         if not model_config:
@@ -350,7 +384,10 @@ Answer with reasoning. Cite which memory nodes led to your conclusion."""
         client = self._build_client(api_key)
         if client is None:
             # Fallback to simple context assembly if NVIDIA not available
-            logger.info("reasoning_agent_fallback", reason="NVIDIA API not configured")
+            logger.info(
+                "reasoning_agent_fallback",
+                reason=self._unavailable_reason(api_key),
+            )
             return self._fallback_reasoning(query, memory_nodes, graph_paths)
         
         # Build the reasoning prompt
