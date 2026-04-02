@@ -11,6 +11,7 @@ import Admin from '@/pages/Admin';
 import Memory from '@/pages/Memory';
 import Profile from '@/pages/Profile';
 import Integrations from '@/pages/Integrations';
+import NotFound from '@/pages/NotFound';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useMemo } from 'react';
@@ -30,6 +31,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
+    const knownProtectedPrefixes = ['/chat', '/graph', '/memory', '/settings', '/profile', '/integrations', '/admin'];
+    const isKnownProtectedPath = knownProtectedPrefixes.some((prefix) => location.pathname.startsWith(prefix));
+    if (!isKnownProtectedPath) {
+      return <Navigate to="/404" replace />;
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
@@ -95,6 +101,7 @@ function Layout() {
             <Route path="/profile/*" element={<Profile />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="*" element={<Navigate to="/404" replace />} />
           </Routes>
         </div>
       </main>
@@ -112,6 +119,7 @@ function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
+              <Route path="/404" element={<NotFound />} />
               <Route path="/*" element={
                 <RequireAuth>
                   <Layout />

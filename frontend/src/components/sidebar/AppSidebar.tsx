@@ -3,6 +3,7 @@ import {
   LogOut,
   
   Brain,
+  Network,
   User,
   Plus,
   FolderOpen,
@@ -290,6 +291,12 @@ export function AppSidebar() {
               <SidebarMenuButton onClick={() => navigate('/memory')} tooltip="MEMORY">
                 <Brain className="h-4 w-4" />
                 <span>MEMORY</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={() => navigate('/graph')} tooltip="GRAPH">
+                <Network className="h-4 w-4" />
+                <span>GRAPH</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
