@@ -38,8 +38,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
@@ -360,48 +358,40 @@ export function AppSidebar() {
             </SidebarMenuItem>
           </SidebarMenu>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-2xl p-2 text-left outline-none transition-colors hover:bg-white/5 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-0">
+        <div className="relative group">
+          {/* Clickable profile area */}
+          <div 
+            className="flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-2xl p-2 text-left cursor-pointer transition-colors hover:bg-white/5 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-0"
+            onClick={() => navigate('/profile')}
+          >
             <Avatar className="h-8 w-8 shrink-0 border border-white/10">
               <AvatarFallback className="bg-purple-900/50 text-xs font-medium text-purple-200">
                 {userInitials}
               </AvatarFallback>
             </Avatar>
             {!collapsed && (
-              <div 
-                className="flex min-w-0 flex-1 flex-col cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate('/profile');
-                }}
-              >
+              <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm font-medium text-white hover:text-purple-200 transition-colors">{user?.full_name || 'User'}</span>
                 <span className="truncate text-xs text-white/40 hover:text-white/60 transition-colors">{user?.email}</span>
               </div>
             )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56 bg-[#110825] border-white/10" align="end" side="right" sideOffset={12}>
-            <DropdownMenuLabel className="text-white/70 font-normal">Account</DropdownMenuLabel>
-            <DropdownMenuSeparator className="bg-white/10" />
-            <DropdownMenuItem onClick={() => navigate('/profile')} className="text-white hover:bg-white/10">
-              <User className="mr-2 h-4 w-4" /> Profile
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/profile/settings')} className="text-white hover:bg-white/10">
-              <Settings2 className="mr-2 h-4 w-4" /> Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="text-white hover:bg-white/10"
-            >
-              {sidebarCollapsed ? <PanelLeftOpen className="mr-2 h-4 w-4" /> : <PanelLeftClose className="mr-2 h-4 w-4" />}
-              {sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator className="bg-white/10" />
-            <DropdownMenuItem onClick={logout} className="text-red-400 hover:text-red-300 hover:bg-red-400/10">
-              <LogOut className="mr-2 h-4 w-4" /> Log out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </div>
+          
+          {/* Three-dot menu */}
+          {!collapsed && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-white/10 flex items-center justify-center">
+                <MoreVertical className="h-4 w-4 text-white/60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-48 bg-[#110825] border-white/10" align="end" side="right" sideOffset={12}>
+                <DropdownMenuItem onClick={logout} className="text-red-400 hover:text-red-300 hover:bg-red-400/10">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </SidebarFooter>
     </Sidebar>
   );
