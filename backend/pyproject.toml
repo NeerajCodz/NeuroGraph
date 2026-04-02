@@ -28,6 +28,7 @@ dependencies = [
     # Pydantic
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
+    "email-validator>=2.2.0",
     
     # Database drivers
     "neo4j>=5.26.0",
