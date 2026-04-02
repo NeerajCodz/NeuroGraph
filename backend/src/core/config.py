@@ -56,14 +56,14 @@ class Settings(BaseSettings):
     redis_max_connections: int = 20
 
     # Gemini API
-    gemini_api_key: SecretStr = Field(default=...)
+    gemini_api_key: SecretStr | None = None
     gemini_model_flash: str = "gemini-2.0-flash"
     gemini_model_pro: str = "gemini-2.5-pro"
     gemini_model_lite: str = "gemini-2.0-flash-lite"
     gemini_model_embedding: str = "models/gemini-embedding-2-preview"
 
     # Groq API
-    groq_api_key: SecretStr = Field(default=...)
+    groq_api_key: SecretStr | None = None
     groq_model: str = "llama-3.3-70b-versatile"
 
     # NVIDIA API (build.nvidia.com)

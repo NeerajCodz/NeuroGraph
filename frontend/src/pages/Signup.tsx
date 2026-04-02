@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import LiquidEther from '@/components/landing/LiquidEther';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,6 +21,7 @@ export default function Signup() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -157,16 +158,27 @@ export default function Signup() {
                 disabled={isLoading}
                 className="h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 rounded-xl focus-visible:ring-fuchsia-500 focus-visible:border-fuchsia-500 transition-all font-medium px-4"
               />
-              <Input
-                type="password"
-                placeholder="Create Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={isLoading}
-                minLength={6}
-                className="h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 rounded-xl focus-visible:ring-fuchsia-500 focus-visible:border-fuchsia-500 transition-all font-medium px-4 tracking-widest"
-              />
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Create Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={isLoading}
+                  minLength={6}
+                  className="h-12 bg-white/5 border-white/10 text-white placeholder:text-white/30 rounded-xl focus-visible:ring-fuchsia-500 focus-visible:border-fuchsia-500 transition-all font-medium px-4 pr-11 tracking-widest"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  disabled={isLoading}
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-white/45 transition hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               
               <div className="mt-6 flex flex-col gap-4">
                 <BorderGlow borderRadius={12} glowRadius={15} glowIntensity={1.5} edgeSensitivity={10} className="w-full">

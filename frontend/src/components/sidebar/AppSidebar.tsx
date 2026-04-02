@@ -5,8 +5,6 @@ import {
   Brain,
   User,
   Plus,
-  FolderOpen,
-  ChevronRight,
   Bot,
   Cpu,
   Settings2,
@@ -19,7 +17,7 @@ import {
   PanelLeftOpen
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Sidebar,
   SidebarContent,
@@ -33,7 +31,7 @@ import {
   SidebarFooter,
   useSidebar
 } from '@/components/ui/sidebar';
-import { Avatar, AvatarFallback,  } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,12 +40,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger
-} from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ShinyText } from '@/components/reactbits/ShinyText';
 import { useAuth } from '@/contexts/AuthContext';
 import { workspaceApi, conversationsApi } from '@/services/api';
@@ -73,6 +73,7 @@ export function AppSidebar() {
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [workspaceSelection, setWorkspaceSelection] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -99,8 +100,31 @@ export function AppSidebar() {
     fetchData();
   }, []);
 
+  const routeWorkspaceId = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('workspace_id');
+  }, [location.search]);
+
+  const activeWorkspaceId = useMemo(() => {
+    const candidateWorkspaceId = routeWorkspaceId ?? workspaceSelection;
+    if (!candidateWorkspaceId) {
+      return null;
+    }
+    return workspaces.some((workspace) => workspace.id === candidateWorkspaceId)
+      ? candidateWorkspaceId
+      : null;
+  }, [routeWorkspaceId, workspaceSelection, workspaces]);
+
+  const previousChats = useMemo(() => {
+    if (activeWorkspaceId) {
+      return conversations.filter((conversation) => conversation.workspace_id === activeWorkspaceId);
+    }
+    return conversations.filter((conversation) => !conversation.workspace_id);
+  }, [conversations, activeWorkspaceId]);
+
   const handleNewChat = (workspaceId?: string | null) => {
-    const targetWorkspaceId = workspaceId && workspaceId !== 'personal' ? workspaceId : null;
+    const selectedWorkspaceId = workspaceId === undefined ? activeWorkspaceId : workspaceId;
+    const targetWorkspaceId = selectedWorkspaceId && selectedWorkspaceId !== 'personal' ? selectedWorkspaceId : null;
     const chatUrl = targetWorkspaceId ? `/chat?workspace_id=${targetWorkspaceId}` : '/chat';
     navigate(chatUrl);
     window.dispatchEvent(new CustomEvent('new-chat', { detail: { workspaceId: targetWorkspaceId } }));
@@ -193,7 +217,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                     <SidebarMenuButton
                       tooltip="New Chat"
-                      onClick={() => handleNewChat(null)}
+                      onClick={() => handleNewChat()}
                       className="gradient-primary text-primary-foreground h-11 rounded-2xl"
                     >
                       <Plus className="h-4 w-4" />
@@ -203,47 +227,67 @@ export function AppSidebar() {
                 </SidebarMenu>
               </SidebarGroup>
 
-            {!collapsed && workspaces.map(ws => (
-              <Collapsible key={ws.id} asChild defaultOpen className="group/collapsible">
+            {!collapsed && (
+              <>
                 <SidebarGroup className="p-0">
-                  <SidebarGroupLabel className="h-auto p-0">
-                    <div className="w-full rounded-2xl border border-white/10 bg-white/5 px-2 py-1.5">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleNewChat(ws.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-white/65 transition hover:bg-white/10 hover:text-white"
-                          title={`New chat in ${ws.name}`}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-white/75 transition hover:bg-white/10 hover:text-white">
-                          <FolderOpen className="h-4 w-4 shrink-0" />
-                          <span className="truncate text-sm">{ws.name}</span>
-                          <ChevronRight className="ml-auto h-4 w-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                        </CollapsibleTrigger>
-                      </div>
-                    </div>
+                  <SidebarGroupLabel className="px-2 pb-1 text-[10px] uppercase tracking-[0.22em] text-white/45">
+                    Workspaces
                   </SidebarGroupLabel>
-                  <CollapsibleContent>
-                    <SidebarGroupContent className="pt-1">
-                      <SidebarMenu className="pl-4">
-                        {conversations.filter(c => c.workspace_id === ws.id).slice(0, 12).map(chat => (
-                          <SidebarMenuItem key={chat.id}>
-                            <SidebarMenuButton
-                              onClick={() => navigate('/chat/' + chat.id)}
-                              className="h-8 rounded-lg text-white/75 hover:text-white"
-                            >
-                              <History className="h-3.5 w-3.5" />
-                              <span className="truncate text-xs">{chat.title}</span>
-                            </SidebarMenuButton>
-                          </SidebarMenuItem>
-                        ))}
-                      </SidebarMenu>
-                    </SidebarGroupContent>
-                  </CollapsibleContent>
+                  <SidebarGroupContent>
+                    <div className="px-2">
+                      <Select
+                        value={activeWorkspaceId ?? 'personal'}
+                        onValueChange={(value) => {
+                          const workspaceId = value === 'personal' ? null : value;
+                          setWorkspaceSelection(workspaceId);
+                          navigate(workspaceId ? `/chat?workspace_id=${workspaceId}` : '/chat');
+                        }}
+                      >
+                        <SelectTrigger className="h-10 rounded-xl border-white/10 bg-white/5 text-white/85 hover:bg-white/10">
+                          <SelectValue placeholder="Personal" />
+                        </SelectTrigger>
+                        <SelectContent className="border-white/10 bg-[#110825] text-white">
+                          <SelectItem value="personal">Personal</SelectItem>
+                          {workspaces.map((workspace) => (
+                            <SelectItem key={workspace.id} value={workspace.id}>
+                              {workspace.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </SidebarGroupContent>
                 </SidebarGroup>
-              </Collapsible>
-            ))}
+
+                <SidebarGroup className="min-h-0 flex-1 p-0">
+                  <SidebarGroupLabel className="px-2 pb-1 text-[10px] uppercase tracking-[0.22em] text-white/45">
+                    Previous Chats
+                  </SidebarGroupLabel>
+                  <SidebarGroupContent className="min-h-0">
+                    <SidebarMenu className="max-h-[44vh] overflow-y-auto px-2 pb-1">
+                      {previousChats.slice(0, 30).map((chat) => (
+                        <SidebarMenuItem key={chat.id}>
+                          <SidebarMenuButton
+                            tooltip={chat.title}
+                            onClick={() => navigate('/chat/' + chat.id)}
+                            isActive={location.pathname === '/chat/' + chat.id}
+                            className="h-8 rounded-xl text-white/75 hover:text-white"
+                          >
+                            <History className="h-3.5 w-3.5" />
+                            <span className="truncate text-xs">{chat.title}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                      {previousChats.length === 0 && (
+                        <div className="px-3 py-2 text-xs text-white/40">
+                          No previous chats yet
+                        </div>
+                      )}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              </>
+            )}
 
           </>
         )}
