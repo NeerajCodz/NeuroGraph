@@ -1002,12 +1002,13 @@ async def get_memory_detail(
                 if emb_str.startswith("[") and emb_str.endswith("]"):
                     body = emb_str[1:-1].replace("\n", " ").strip()
                     if body:
+                        # Handle both comma-separated and space-separated values
                         parts = body.split(",") if "," in body else body.split()
-                        vector_values = [float(part) for part in parts if part]
+                        vector_values = [float(part.strip()) for part in parts if part.strip()]
             embedding_dim = len(vector_values)
             embedding_preview = vector_values[:10]
         except (TypeError, ValueError) as e:
-            logger.warning("memory_embedding_preview_parse_failed", memory_id=str(id), error=str(e))
+            logger.warning("memory_embedding_preview_parse_failed", memory_id=str(id), error=str(e)[:200])
 
     metadata = row["metadata"] if isinstance(row["metadata"], dict) else {}
 

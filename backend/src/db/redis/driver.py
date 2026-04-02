@@ -104,7 +104,9 @@ class RedisDriver:
         """Set a value with optional expiration in seconds."""
         try:
             client = await self._get_client()
-            return await client.set(key, value, ex=expire)
+            if expire is not None:
+                return await client.set(key, value, ex=expire)
+            return await client.set(key, value)
         except Exception as e:
             raise RedisError(f"Set failed for key {key}: {e}") from e
 
