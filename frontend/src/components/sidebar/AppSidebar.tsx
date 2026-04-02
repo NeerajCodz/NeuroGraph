@@ -3,7 +3,6 @@ import {
   LogOut,
   
   Brain,
-  Network,
   User,
   Plus,
   FolderOpen,
@@ -15,6 +14,7 @@ import {
   Shield,
   LayoutDashboard,
   Home,
+  GitBranch,
   PanelLeftClose,
   PanelLeftOpen
 } from 'lucide-react';
@@ -87,11 +87,12 @@ export function AppSidebar() {
       try {
         const wsResult = await workspaceApi.list();
         const wsList = Array.isArray(wsResult) ? wsResult : [];
-        setWorkspaces(wsList);
+        const dedupedWorkspaces = Array.from(new Map(wsList.map((ws) => [ws.id, ws])).values());
+        setWorkspaces(dedupedWorkspaces);
 
         const personalConversations = await conversationsApi.list();
         const workspaceConversationGroups = await Promise.all(
-          wsList.map((ws) => conversationsApi.list(ws.id).catch(() => []))
+          dedupedWorkspaces.map((ws) => conversationsApi.list(ws.id).catch(() => []))
         );
         const all = [
           ...(Array.isArray(personalConversations) ? personalConversations : []),
@@ -288,14 +289,24 @@ export function AppSidebar() {
         <div className="mb-2 rounded-2xl border border-white/10 bg-white/5 p-1.5">
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => navigate('/memory')} tooltip="MEMORY">
+              <SidebarMenuButton
+                onClick={() => navigate('/memory')}
+                tooltip="MEMORY"
+                isActive={location.pathname.startsWith('/memory')}
+                className="rounded-xl"
+              >
                 <Brain className="h-4 w-4" />
                 <span>MEMORY</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => navigate('/graph')} tooltip="GRAPH">
-                <Network className="h-4 w-4" />
+              <SidebarMenuButton
+                onClick={() => navigate('/graph')}
+                tooltip="GRAPH"
+                isActive={location.pathname.startsWith('/graph')}
+                className="rounded-xl text-cyan-100/85 hover:text-cyan-100"
+              >
+                <GitBranch className="h-4 w-4" />
                 <span>GRAPH</span>
               </SidebarMenuButton>
             </SidebarMenuItem>

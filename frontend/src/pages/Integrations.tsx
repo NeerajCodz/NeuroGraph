@@ -320,8 +320,10 @@ export default function Integrations() {
 
   const loadWorkspaces = async () => {
     try {
-      const data: any = await workspaceApi.list();
-      setWorkspaces(data.workspaces || []);
+      const result = await workspaceApi.list() as Array<{ id: string; name: string }>;
+      const workspacesList = Array.isArray(result) ? result : [];
+      const dedupedWorkspaces = Array.from(new Map(workspacesList.map((workspace) => [workspace.id, workspace])).values());
+      setWorkspaces(dedupedWorkspaces);
     } catch (error) {
       console.error('Failed to load workspaces:', error);
     }

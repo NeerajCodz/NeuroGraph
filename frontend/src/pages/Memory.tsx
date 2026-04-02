@@ -177,7 +177,9 @@ export default function MemoryCanvas() {
     const loadWorkspaces = async () => {
       try {
         const result = await workspaceApi.list() as WorkspaceItem[];
-        setWorkspaces(Array.isArray(result) ? result : []);
+        const workspacesList = Array.isArray(result) ? result : [];
+        const dedupedWorkspaces = Array.from(new Map(workspacesList.map((workspace) => [workspace.id, workspace])).values());
+        setWorkspaces(dedupedWorkspaces);
       } catch {
         console.error('Failed to load workspaces');
       }

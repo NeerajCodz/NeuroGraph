@@ -381,9 +381,10 @@ export default function Chat() {
       try {
         const ws = await workspaceApi.list() as Array<{ id: string; name: string }>;
         const items = Array.isArray(ws) ? ws : [];
-        setWorkspaces(items);
-        if (!selectedWorkspace && items.length > 0) {
-          setSelectedWorkspace(items[0].id);
+        const dedupedWorkspaces = Array.from(new Map(items.map((workspace) => [workspace.id, workspace])).values());
+        setWorkspaces(dedupedWorkspaces);
+        if (!selectedWorkspace && dedupedWorkspaces.length > 0) {
+          setSelectedWorkspace(dedupedWorkspaces[0].id);
         }
       } catch (err) {
         console.error('Failed to load workspaces:', err);

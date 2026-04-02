@@ -936,15 +936,22 @@ async def get_memory_detail(
     if embedding_value is not None:
         try:
             # pgvector may return string/list/ndarray depending on driver adaptation.
+            vector_values: list[float] = []
             if isinstance(embedding_value, (list, tuple)):
-                embedding_dim = len(embedding_value)
-                embedding_preview = [float(value) for value in embedding_value[:10]]
-            else:
-                emb_str = str(embedding_value)
+                vector_values = [float(value) for value in embedding_value]
+            elif hasattr(embedding_value, "tolist"):
+                converted = embedding_value.tolist()
+                if isinstance(converted, (list, tuple)):
+                    vector_values = [float(value) for value in converted]
+            if not vector_values:
+                emb_str = str(embedding_value).strip()
                 if emb_str.startswith("[") and emb_str.endswith("]"):
-                    parts = [part for part in emb_str[1:-1].split(",") if part]
-                    embedding_dim = len(parts)
-                    embedding_preview = [float(part) for part in parts[:10]]
+                    body = emb_str[1:-1].replace("\n", " ").strip()
+                    if body:
+                        parts = body.split(",") if "," in body else body.split()
+                        vector_values = [float(part) for part in parts if part]
+            embedding_dim = len(vector_values)
+            embedding_preview = vector_values[:10]
         except (TypeError, ValueError) as e:
             logger.warning("memory_embedding_preview_parse_failed", memory_id=str(id), error=str(e))
 
