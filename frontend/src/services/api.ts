@@ -1,6 +1,7 @@
 // API Service for NeuroGraph Backend
 
-const API_BASE = `${import.meta.env.NEUROGRAPH_BE || 'http://localhost:8000'}/api/v1`;
+const backendBase = (import.meta.env.NEUROGRAPH_BE || 'http://localhost:8000').replace(/\/+$/, '');
+const API_BASE = `${backendBase}/api/v1`;
 
 // Streaming types
 export interface StreamingStepDetail {

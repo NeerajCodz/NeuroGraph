@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     workers: int = 1
     log_level: Literal["debug", "info", "warning", "error", "critical"] = "info"
 
+    # CORS
+    cors_origins: str = "http://localhost:5173,http://localhost:5174,https://neurograph-ai.vercel.app"
+    cors_origin_regex: str | None = None
+
     # Neo4j
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_username: str = "neo4j"
@@ -184,6 +188,11 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production mode."""
         return self.app_env == "production"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse comma-separated CORS origins into a normalized list."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache
