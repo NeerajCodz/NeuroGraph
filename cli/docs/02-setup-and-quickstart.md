@@ -183,3 +183,17 @@ Set MCP API key and invoke via key:
 .\neurograph.exe config set mcp_api_key your-key
 .\neurograph.exe mcp invoke-api-key --tool neurograph_status
 ```
+
+## 8. Global MCP mode (`--mcp`)
+
+Use the global `--mcp` flag to route supported high-level commands through MCP tools while keeping normal command UX.
+
+Examples:
+
+```powershell
+.\neurograph.exe --mcp ask "Summarize workspace updates" --workspace-id 00000000-0000-0000-0000-000000000000 --layer workspace
+.\neurograph.exe --mcp memory remember "Alice prefers async updates" --layer personal
+.\neurograph.exe --mcp memory recall "What does Alice prefer?" --limit 5
+.\neurograph.exe --mcp memory search "roadmap decisions" --limit 10
+.\neurograph.exe --mcp chat send "Draft sprint plan" --workspace-id 00000000-0000-0000-0000-000000000000 --layer workspace
+```

@@ -9,7 +9,7 @@ import json
 from typing import Any, AsyncGenerator, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -35,6 +35,39 @@ class MCPResponse(BaseModel):
     id: Optional[str | int] = None
     result: Optional[Any] = None
     error: Optional[dict[str, Any]] = None
+
+
+def _extract_bearer_token(request: Request) -> str | None:
+    """Extract bearer token from Authorization header."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return None
+    parts = auth_header.strip().split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None
+
+
+def _set_session_state_from_request(
+    session_state: dict[str, Any],
+    current_user: dict[str, Any],
+    request: Request,
+) -> None:
+    """Sync MCP session state with the authenticated HTTP request context."""
+    user_id_raw = current_user.get("id")
+    if isinstance(user_id_raw, UUID):
+        user_id = user_id_raw
+    else:
+        user_id = UUID(str(user_id_raw))
+
+    session_state["user_id"] = user_id
+    session_state["initialized"] = True
+
+    access_token = _extract_bearer_token(request)
+    if access_token:
+        session_state["access_token"] = access_token
+        session_state["api_key"] = None
 
 
 # Import MCP tools - lazy import to avoid circular dependencies
@@ -230,8 +263,12 @@ def get_tool_schemas():
                     "message": {"type": "string"},
                     "use_memory": {"type": "boolean", "default": True},
                     "workspace_id": {"type": "string"},
+                    "conversation_id": {"type": "string"},
+                    "layer": {"type": "string", "enum": ["personal", "workspace", "global"]},
+                    "include_global": {"type": "boolean", "default": False},
                     "provider": {"type": "string"},
                     "model": {"type": "string"},
+                    "response_format": {"type": "string", "enum": ["markdown", "json"]},
                 },
                 "required": ["message"],
             },
@@ -264,6 +301,7 @@ def get_tool_schemas():
 @router.post("/invoke")
 async def invoke_tool(
     request: MCPRequest,
+    http_request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> MCPResponse:
     """Invoke an MCP tool via HTTP.
@@ -273,9 +311,7 @@ async def invoke_tool(
     """
     tools, session_state = get_mcp_tools()
     
-    # Set session state from authenticated user
-    session_state["user_id"] = UUID(current_user["id"])
-    session_state["initialized"] = True
+    _set_session_state_from_request(session_state, current_user, http_request)
     
     if request.method == "tools/list":
         # Return list of available tools
@@ -328,12 +364,15 @@ async def invoke_tool(
 
 @router.get("/tools")
 async def list_tools(
+    request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """List available MCP tools.
     
     Returns tool schemas for client introspection.
     """
+    _, session_state = get_mcp_tools()
+    _set_session_state_from_request(session_state, current_user, request)
     return {"tools": get_tool_schemas()}
 
 
@@ -348,9 +387,7 @@ async def mcp_sse_stream(
     """
     tools, session_state = get_mcp_tools()
     
-    # Set session state
-    session_state["user_id"] = UUID(current_user["id"])
-    session_state["initialized"] = True
+    _set_session_state_from_request(session_state, current_user, request)
     
     async def event_stream() -> AsyncGenerator[str, None]:
         # Send connected event
@@ -420,14 +457,13 @@ async def mcp_sse_stream(
 @router.post("/invoke/api-key")
 async def invoke_tool_with_api_key(
     request: MCPRequest,
-    x_api_key: str = None,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> MCPResponse:
     """Invoke an MCP tool using API key authentication.
     
     For MCP clients that don't support OAuth/JWT flow.
     Pass API key via X-API-Key header.
     """
-    from src.db.postgres import get_postgres_driver
     from src.mcp.neurograph_mcp import _authenticate_api_key
     
     if not x_api_key:

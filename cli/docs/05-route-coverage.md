@@ -125,6 +125,18 @@ This matrix maps backend routes to CLI commands.
 | GET | `/mcp/tools` | `mcp tools` |
 | POST | `/mcp/invoke/api-key` | `mcp invoke-api-key` |
 
+### Global MCP mode coverage (`--mcp`)
+
+When `--mcp` is enabled, these commands route through `/mcp/invoke` with `tools/call`:
+
+- `ask` → `neurograph_chat`
+- `chat send`, `chat stream` → `neurograph_chat`
+- `remember`, `memory remember` → `neurograph_remember`
+- `recall`, `memory recall` → `neurograph_recall`
+- `memory search` → `neurograph_search`
+- `memory list` → `neurograph_list_memories`
+- `memory count`, `memory status` → `neurograph_status`
+
 ## 11. Known backend limitations (not CLI gaps)
 
 - `/integrations/oauth/initiate` and `/integrations/oauth/callback` currently return `501` in backend implementation.

@@ -289,27 +289,33 @@ async def visualize_graph(
     # Select a bounded node set first, then only include edges that stay within that set.
     # This prevents invalid edge references that can break force-graph rendering.
     query = """
-    MATCH (n:Entity)
+    MATCH (n)
+    WHERE n:Entity OR n:Memory OR n:User OR n:Workspace
     WITH n
-    ORDER BY coalesce(n.confidence, 0.5) DESC, n.name ASC
+    ORDER BY coalesce(n.confidence, 0.5) DESC, coalesce(n.name, 'Unnamed') ASC
     LIMIT $max_nodes
     WITH collect(n) AS selected_nodes
     UNWIND selected_nodes AS n
-    OPTIONAL MATCH (n)-[r]-(m:Entity)
+    OPTIONAL MATCH (n)-[r]-(m)
     WHERE m IN selected_nodes
     WITH selected_nodes,
          collect(DISTINCT {
             source: coalesce(startNode(r).id, startNode(r).name),
             target: coalesce(endNode(r).id, endNode(r).name),
             type: type(r),
-            reason: r.reason,
-            confidence: coalesce(r.confidence, 1.0)
+            reason: coalesce(r.reason, 'Connected'),
+            confidence: coalesce(r.confidence, 0.8)
          }) AS edges
     RETURN
       [n IN selected_nodes | {
-        id: coalesce(n.id, n.name),
-        name: n.name,
-        type: coalesce(n.type, 'Entity'),
+        id: coalesce(n.id, n.name, n.node_id),
+        name: coalesce(n.name, substring(n.content, 0, 50)),
+        type: coalesce(n.type, 
+                      CASE WHEN n:Entity THEN 'Entity'
+                           WHEN n:Memory THEN 'Memory' 
+                           WHEN n:User THEN 'User'
+                           WHEN n:Workspace THEN 'Workspace'
+                           ELSE 'Unknown' END),
         layer: coalesce(n.layer, 'global'),
         confidence: coalesce(n.confidence, 0.5)
       }] AS nodes,

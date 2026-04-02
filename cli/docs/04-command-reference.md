@@ -120,3 +120,7 @@ This reference is grouped by root command.
 - `ask <message> [--provider] [--model] [--global]`
 - `remember <content> [--layer]`
 - `recall <query> [--limit]`
+
+## 13. Global flags
+
+- `--mcp` routes supported commands through backend MCP tools (`ask`, `chat send`, `chat stream`, `memory remember|recall|search|list|count|status`, `remember`, `recall`).

@@ -10,6 +10,7 @@ Current implementation status:
 - Command groups implemented: `auth`, `config`, `memory`, `chat`, `conversations`, `workspaces`, `graph`, `models`, `integrations`, `profile`, `mcp`
 - Quick aliases implemented: `ask`, `remember`, `recall`
 - Backend and MCP integration implemented (JWT auth and MCP API key flow)
+- Global `--mcp` mode for routing supported commands through MCP tools
 - Tests added for config and API client behavior
 
 Validation summary:

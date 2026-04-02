@@ -652,6 +652,16 @@ def _format_error(error: str) -> str:
     return f"Error: {error}"
 
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    """Best-effort float conversion with fallback."""
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # =============================================================================
 # Memory Tools
 # =============================================================================
@@ -1388,82 +1398,77 @@ async def neurograph_chat(params: ChatInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.rag.hybrid_search import HybridSearch
-        from src.rag.context_assembly import ContextAssembler
-        from src.models.unified_llm import get_unified_llm
-        from src.core.config import get_settings
-        from src.db.neo4j import get_neo4j_driver
-        from src.db.postgres import get_postgres_driver
-        
-        settings = get_settings()
-        neo4j = get_neo4j_driver()
-        postgres = get_postgres_driver()
-        await neo4j.connect()
-        await postgres.connect()
-        
-        context = ""
-        sources = []
-        
-        if params.use_memory:
-            # Search memory for context
-            search = HybridSearch()
-            layers = ["personal"]
-            if params.workspace_id:
-                layers.append("tenant")
-            
-            results = await search.search(
-                query=params.message,
-                user_id=ctx["user_id"],
-                tenant_id=UUID(params.workspace_id) if params.workspace_id else ctx.get("tenant_id"),
-                layers=layers,
-                limit=10,
-            )
-            
-            if results:
-                assembler = ContextAssembler()
-                context = assembler.assemble(scored_nodes=results)
-                sources = [
-                    {
-                        "content": r.content[:100],
-                        "score": round(getattr(r, 'final_score', 0), 2),
-                    }
-                    for r in results[:5]
-                ]
-        
-        # Generate response
-        provider = params.provider or settings.default_llm_provider
-        model = params.model or settings.default_llm_model
-        
-        llm = get_unified_llm()
-        
-        if context:
-            prompt = (
-                f"Context:\n{context}\n\n---\n\n"
-                f"User: {params.message}\n\n"
-                "Answer using the context above. Cite relevant memories."
-            )
-            system = "You are NeuroGraph AI with structured memory. Use context to answer."
-        else:
-            prompt = params.message
-            system = "You are NeuroGraph AI, a helpful assistant."
-        
-        response = await llm.generate(
-            prompt=prompt,
-            system_instruction=system,
-            provider=provider,
-            model=model,
-        )
-        
-        # Format response
-        output = f"## Response\n\n{response}\n"
-        
-        if sources:
-            output += "\n### Sources Used\n"
-            for s in sources:
-                output += f"- [{s['score']:.2f}] {s['content']}...\n"
-        
-        return output
-        
+        requested_layer = params.layer.strip().lower() if params.layer else ""
+        if requested_layer == "":
+            if params.workspace_id or ctx.get("mode") == "workspace":
+                requested_layer = "workspace"
+            else:
+                requested_layer = "personal"
+        if requested_layer not in {"personal", "workspace", "global"}:
+            return _format_error("layer must be one of personal, workspace, global")
+
+        workspace_id = _resolve_workspace_id(params.workspace_id, ctx)
+        if requested_layer == "workspace" and not workspace_id:
+            return _format_error("workspace_id required for workspace layer")
+
+        payload: dict[str, Any] = {
+            "content": params.message,
+            "layer": requested_layer,
+            "include_global": params.include_global,
+            "agents_enabled": bool(params.use_memory),
+        }
+        if workspace_id:
+            payload["workspace_id"] = workspace_id
+        if params.conversation_id:
+            payload["conversation_id"] = params.conversation_id
+        if params.provider:
+            payload["provider"] = params.provider
+        if params.model:
+            payload["model"] = params.model
+
+        response = await _call_backend(ctx, "POST", "/chat/message", json_body=payload)
+
+        if params.response_format == ResponseFormat.JSON:
+            return json.dumps(response, indent=2, default=str)
+
+        content = str(response.get("content", "")).strip()
+        if not content:
+            content = "No response content returned."
+
+        lines = ["## Response", "", content]
+        confidence = response.get("confidence")
+        provider_used = response.get("provider_used")
+        model_used = response.get("model_used")
+        conversation_id = response.get("conversation_id")
+
+        meta: list[str] = []
+        if conversation_id:
+            meta.append(f"Conversation: `{conversation_id}`")
+        if provider_used and model_used:
+            meta.append(f"Model: `{provider_used}/{model_used}`")
+        if isinstance(confidence, (int, float)):
+            meta.append(f"Confidence: {confidence:.0%}")
+        if meta:
+            lines.extend(["", "### Metadata", *[f"- {item}" for item in meta]])
+
+        sources = response.get("sources")
+        if isinstance(sources, list) and sources:
+            lines.extend(["", "### Sources Used"])
+            for source in sources[:5]:
+                if not isinstance(source, dict):
+                    continue
+                score = source.get("score")
+                content_preview = str(source.get("content", "")).strip()
+                if isinstance(score, (int, float)):
+                    lines.append(f"- [{score:.2f}] {content_preview[:140]}")
+                else:
+                    lines.append(f"- {content_preview[:140]}")
+
+        return "\n".join(lines)
+
+    except BackendRouteError as e:
+        logger.error("mcp_chat_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_chat_error", error=str(e))
         return _format_error(str(e))
@@ -1496,59 +1501,23 @@ async def neurograph_status(params: MemoryStatusInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.db.postgres import get_postgres_driver
-        from src.db.neo4j import get_neo4j_driver
-        
-        postgres = get_postgres_driver()
-        neo4j = get_neo4j_driver()
-        await postgres.connect()
-        await neo4j.connect()
-        
-        stats = {}
-        
-        # Get memory counts from postgres
-        async with postgres.connection() as conn:
-            personal_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM memory.embeddings WHERE user_id = $1 AND layer = 'personal'",
-                ctx["user_id"],
-            )
-            stats["personal_memories"] = personal_count
-            
-            if params.workspace_id or ctx.get("tenant_id"):
-                ws_id = UUID(params.workspace_id) if params.workspace_id else ctx["tenant_id"]
-                workspace_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM memory.embeddings WHERE tenant_id = $1 AND layer = 'tenant'",
-                    ws_id,
-                )
-                stats["workspace_memories"] = workspace_count
-        
-        # Get entity counts from neo4j
-        async with neo4j.session() as session:
-            result = await session.run(
-                """
-                MATCH (e:Entity)
-                WHERE e.user_id = $user_id
-                RETURN count(e) AS entity_count
-                """,
-                user_id=str(ctx["user_id"]),
-            )
-            record = await result.single()
-            stats["entities"] = record["entity_count"] if record else 0
-            
-            rel_result = await session.run(
-                """
-                MATCH (e:Entity)-[r]-()
-                WHERE e.user_id = $user_id
-                RETURN count(DISTINCT r) AS relationship_count
-                """,
-                user_id=str(ctx["user_id"]),
-            )
-            rel_record = await rel_result.single()
-            stats["relationships"] = rel_record["relationship_count"] if rel_record else 0
-        
+        workspace_id = _resolve_workspace_id(params.workspace_id, ctx)
+        query = f"?workspace_id={quote(workspace_id)}" if workspace_id else ""
+        status_payload = await _call_backend(ctx, "GET", f"/memory/status{query}")
+        count_payload = await _call_backend(ctx, "GET", f"/memory/count{query}")
+
+        stats = {
+            "personal_memories": count_payload.get("personal", 0),
+            "workspace_memories": count_payload.get("tenant", 0),
+            "global_memories": count_payload.get("global", 0),
+            "total_memories": count_payload.get("total", 0),
+            "entities": status_payload.get("entity_count", 0),
+            "relationships": status_payload.get("relationship_count", 0),
+        }
+
         if params.response_format == ResponseFormat.JSON:
             return json.dumps({
-                "user_id": str(ctx["user_id"]),
+                "user_id": str(ctx.get("user_id")),
                 "statistics": stats,
                 "status": "healthy",
             }, indent=2)
@@ -1561,8 +1530,9 @@ async def neurograph_status(params: MemoryStatusInput) -> str:
             f"- Personal Memories: **{stats.get('personal_memories', 0)}**",
         ]
         
-        if "workspace_memories" in stats:
-            lines.append(f"- Workspace Memories: **{stats['workspace_memories']}**")
+        lines.append(f"- Workspace Memories: **{stats.get('workspace_memories', 0)}**")
+        lines.append(f"- Global Memories: **{stats.get('global_memories', 0)}**")
+        lines.append(f"- Total Memories: **{stats.get('total_memories', 0)}**")
         
         lines.extend([
             f"- Graph Entities: **{stats.get('entities', 0)}**",
@@ -1572,6 +1542,9 @@ async def neurograph_status(params: MemoryStatusInput) -> str:
         
         return "\n".join(lines)
         
+    except BackendRouteError as e:
+        logger.error("mcp_status_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_status_error", error=str(e))
         return _format_error(str(e))
@@ -1659,31 +1632,21 @@ async def neurograph_switch_workspace(params: SwitchWorkspaceInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.db.postgres import get_postgres_driver
-        
-        postgres = get_postgres_driver()
-        await postgres.connect()
-        
-        # Verify workspace access
-        async with postgres.connection() as conn:
-            access = await conn.fetchrow(
-                """
-                SELECT w.id, w.name FROM chat.workspaces w
-                LEFT JOIN chat.workspace_members wm ON wm.workspace_id = w.id
-                WHERE w.id = $1 AND (wm.user_id = $2 OR w.created_by = $2)
-                """,
-                UUID(params.workspace_id),
-                ctx["user_id"],
-            )
-            
-            if not access:
-                return _format_error(f"Workspace {params.workspace_id} not found or no access")
-        
+        workspace = await _call_backend(
+            ctx,
+            "GET",
+            f"/workspaces/{quote(params.workspace_id)}",
+        )
+        workspace_name = workspace.get("name", params.workspace_id)
+
         _session_state["tenant_id"] = UUID(params.workspace_id)
         _session_state["mode"] = "workspace"
         
-        return f"✅ Switched to workspace: **{access['name']}**\n`{params.workspace_id}`"
-        
+        return f"✅ Switched to workspace: **{workspace_name}**\n`{params.workspace_id}`"
+
+    except BackendRouteError as e:
+        logger.error("mcp_switch_workspace_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         return _format_error(str(e))
 

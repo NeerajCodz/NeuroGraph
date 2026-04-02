@@ -14,7 +14,9 @@ import {
   Home,
   GitBranch,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Trash2,
+  MoreVertical
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo } from 'react';
@@ -133,6 +135,29 @@ export function AppSidebar() {
   const userInitials = user?.full_name
     ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : user?.email?.slice(0, 2).toUpperCase() || 'U';
+
+  const handleDeleteConversation = async (conversationId: string, conversationTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent navigation when clicking delete
+    
+    if (confirm(`Are you sure you want to delete "${conversationTitle}"? This action cannot be undone.`)) {
+      try {
+        await conversationsApi.delete(conversationId);
+        
+        // Remove the conversation from local state
+        setConversations(prevConversations => 
+          prevConversations.filter(conv => conv.id !== conversationId)
+        );
+        
+        // If we're currently viewing the deleted conversation, navigate away
+        if (location.pathname === `/chat/${conversationId}`) {
+          navigate('/chat');
+        }
+      } catch (error) {
+        console.error('Error deleting conversation:', error);
+        alert('Failed to delete conversation. Please try again.');
+      }
+    }
+  };
 
   const isProfileRoute = location.pathname.startsWith('/profile');
 
@@ -328,9 +353,15 @@ export function AppSidebar() {
               </AvatarFallback>
             </Avatar>
             {!collapsed && (
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm font-medium text-white">{user?.full_name || 'User'}</span>
-                <span className="truncate text-xs text-white/40">{user?.email}</span>
+              <div 
+                className="flex min-w-0 flex-1 flex-col cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate('/profile');
+                }}
+              >
+                <span className="truncate text-sm font-medium text-white hover:text-purple-200 transition-colors">{user?.full_name || 'User'}</span>
+                <span className="truncate text-xs text-white/40 hover:text-white/60 transition-colors">{user?.email}</span>
               </div>
             )}
           </DropdownMenuTrigger>

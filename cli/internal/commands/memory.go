@@ -49,6 +49,28 @@ func newMemoryRememberCmd() *cobra.Command {
 
 			mapped := mapLayer(firstNonEmpty(layer, rt.cfg.Defaults.Layer))
 			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"content":         strings.Join(args, " "),
+					"layer":           mapped,
+					"response_format": "json",
+				}
+				if mapped == "tenant" {
+					if ws == "" {
+						return errors.New("workspace_id required for workspace layer")
+					}
+					argsMap["workspace_id"] = ws
+				}
+
+				var resp map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_remember", argsMap, &resp); err != nil {
+					return err
+				}
+				output.Success("Memory stored")
+				output.KV("ID", toString(resp["id"]))
+				output.KV("Layer", toString(resp["layer"]))
+				return nil
+			}
 
 			payload := map[string]any{
 				"content": strings.Join(args, " "),
@@ -102,6 +124,41 @@ func newMemoryRecallCmd() *cobra.Command {
 				layers[i] = mapLayer(layers[i])
 			}
 			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"query":           strings.Join(args, " "),
+					"layers":          layers,
+					"max_results":     limit,
+					"min_confidence":  minConfidence,
+					"response_format": "json",
+				}
+				if contains(layers, "tenant") {
+					if ws == "" {
+						return errors.New("workspace_id required when layers include workspace")
+					}
+					argsMap["workspace_id"] = ws
+				}
+
+				var resp []map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_recall", argsMap, &resp); err != nil {
+					return err
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				if len(resp) == 0 {
+					output.Info("No results")
+					return nil
+				}
+				for i, m := range resp {
+					output.Heading(fmt.Sprintf("Result %d", i+1))
+					output.KV("ID", toString(m["id"]))
+					output.KV("Layer", toString(m["layer"]))
+					output.KV("Score", toString(m["score"]))
+					fmt.Println(toString(m["content"]))
+				}
+				return nil
+			}
 
 			payload := map[string]any{
 				"query":          strings.Join(args, " "),
@@ -169,6 +226,44 @@ func newMemorySearchCmd() *cobra.Command {
 				layers[i] = mapLayer(layers[i])
 			}
 			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"query":           strings.Join(args, " "),
+					"layers":          layers,
+					"search_type":     "hybrid",
+					"limit":           limit,
+					"offset":          0,
+					"response_format": "json",
+				}
+				if ws != "" {
+					argsMap["workspace_id"] = ws
+				}
+				var wrapped map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_search", argsMap, &wrapped); err != nil {
+					return err
+				}
+				respAny, ok := wrapped["results"]
+				if !ok {
+					respAny = []any{}
+				}
+				resp := make([]map[string]any, 0)
+				if arr, ok := respAny.([]any); ok {
+					for _, item := range arr {
+						if m, ok := item.(map[string]any); ok {
+							resp = append(resp, m)
+						}
+					}
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				rows := make([][]string, 0, len(resp))
+				for _, m := range resp {
+					rows = append(rows, []string{toString(m["id"]), toString(m["layer"]), toString(m["score"]), truncate(toString(m["content"]), 80)})
+				}
+				output.PrintRows([]string{"ID", "Layer", "Score", "Content"}, rows)
+				return nil
+			}
 
 			q := url.Values{}
 			q.Set("q", strings.Join(args, " "))
@@ -223,6 +318,45 @@ func newMemoryListCmd() *cobra.Command {
 
 			mapped := mapLayer(firstNonEmpty(layer, rt.cfg.Defaults.Layer))
 			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"layer":           mapped,
+					"limit":           limit,
+					"offset":          offset,
+					"response_format": "json",
+				}
+				if mapped == "tenant" {
+					if ws == "" {
+						return errors.New("workspace_id required for workspace layer")
+					}
+					argsMap["workspace_id"] = ws
+				}
+				var wrapped map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_list_memories", argsMap, &wrapped); err != nil {
+					return err
+				}
+				memAny, ok := wrapped["memories"]
+				if !ok {
+					memAny = []any{}
+				}
+				resp := make([]map[string]any, 0)
+				if arr, ok := memAny.([]any); ok {
+					for _, item := range arr {
+						if m, ok := item.(map[string]any); ok {
+							resp = append(resp, m)
+						}
+					}
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				rows := make([][]string, 0, len(resp))
+				for _, m := range resp {
+					rows = append(rows, []string{toString(m["id"]), mapped, toString(m["confidence"]), truncate(toString(m["content"]), 80)})
+				}
+				output.PrintRows([]string{"ID", "Layer", "Confidence", "Content"}, rows)
+				return nil
+			}
 
 			q := url.Values{}
 			q.Set("layer", mapped)
@@ -273,6 +407,33 @@ func newMemoryCountCmd() *cobra.Command {
 				return err
 			}
 			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"response_format": "json",
+				}
+				if ws != "" {
+					argsMap["workspace_id"] = ws
+				}
+				var statusResp map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_status", argsMap, &statusResp); err != nil {
+					return err
+				}
+				resp := map[string]any{}
+				if stats, ok := statusResp["statistics"].(map[string]any); ok {
+					resp["personal"] = stats["personal_memories"]
+					resp["tenant"] = stats["workspace_memories"]
+					resp["global"] = stats["global_memories"]
+					resp["total"] = stats["total_memories"]
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				output.Heading("Memory Count")
+				for k, v := range resp {
+					output.KV(k, v)
+				}
+				return nil
+			}
 			path := "/memory/count"
 			if ws != "" {
 				path += "?workspace_id=" + url.QueryEscape(ws)
@@ -311,6 +472,26 @@ func newMemoryStatusCmd() *cobra.Command {
 				return err
 			}
 			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"response_format": "json",
+				}
+				if ws != "" {
+					argsMap["workspace_id"] = ws
+				}
+				var resp map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_status", argsMap, &resp); err != nil {
+					return err
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				output.Heading("Memory Status")
+				for k, v := range resp {
+					output.KV(k, v)
+				}
+				return nil
+			}
 			path := "/memory/status"
 			if ws != "" {
 				path += "?workspace_id=" + url.QueryEscape(ws)

@@ -11,11 +11,16 @@ import (
 )
 
 func NewRootCmd() *cobra.Command {
+	var mcpMode bool
 	root := &cobra.Command{
 		Use:   "neurograph",
 		Short: "NeuroGraph CLI",
 		Long:  "NeuroGraph CLI client for backend and MCP servers.",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			setMCPMode(mcpMode)
+		},
 	}
+	root.PersistentFlags().BoolVar(&mcpMode, "mcp", false, "Route supported commands through MCP tools")
 
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newAuthCmd())
@@ -63,6 +68,8 @@ func newQuickAskCmd() *cobra.Command {
 	var provider string
 	var model string
 	var includeGlobal bool
+	var workspaceID string
+	var layer string
 
 	cmd := &cobra.Command{
 		Use:   "ask [message]",
@@ -77,15 +84,41 @@ func newQuickAskCmd() *cobra.Command {
 				return err
 			}
 
-			chatLayer := mapChatLayer(rt.cfg.Defaults.Layer)
-			workspaceID := rt.cfg.Defaults.WorkspaceID
-			if chatLayer == "workspace" && workspaceID == "" {
+			chatLayer := mapChatLayer(firstNonEmpty(layer, rt.cfg.Defaults.Layer))
+			ws := firstNonEmpty(workspaceID, rt.cfg.Defaults.WorkspaceID)
+			if chatLayer == "workspace" && ws == "" {
 				return fmt.Errorf("workspace_id required for workspace layer; run neurograph config set workspace_id <uuid>")
+			}
+
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"message":         strings.Join(args, " "),
+					"layer":           chatLayer,
+					"include_global":  includeGlobal,
+					"response_format": "json",
+					"use_memory":      true,
+				}
+				if ws != "" {
+					argsMap["workspace_id"] = ws
+				}
+				if p := providerOrDefault(provider, rt.cfg.Defaults.Provider); p != "" {
+					argsMap["provider"] = p
+				}
+				if m := modelOrDefault(model, rt.cfg.Defaults.Model); m != "" {
+					argsMap["model"] = m
+				}
+
+				var resp map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_chat", argsMap, &resp); err != nil {
+					return err
+				}
+				fmt.Println(toString(resp["content"]))
+				return nil
 			}
 
 			payload := map[string]any{
 				"content":        strings.Join(args, " "),
-				"workspace_id":   workspaceID,
+				"workspace_id":   ws,
 				"layer":          chatLayer,
 				"include_global": includeGlobal,
 				"provider":       providerOrDefault(provider, rt.cfg.Defaults.Provider),
@@ -107,6 +140,8 @@ func newQuickAskCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&provider, "provider", "", "LLM provider")
 	cmd.Flags().StringVar(&model, "model", "", "Model ID")
+	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace UUID")
+	cmd.Flags().StringVar(&layer, "layer", "", "Layer personal|workspace|global")
 	cmd.Flags().BoolVar(&includeGlobal, "global", false, "Include global memory")
 	return cmd
 }
@@ -130,16 +165,40 @@ func newQuickRememberCmd() *cobra.Command {
 			if mapped == "" {
 				mapped = mapLayer(rt.cfg.Defaults.Layer)
 			}
+			ws := rt.cfg.Defaults.WorkspaceID
+
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"content":         strings.Join(args, " "),
+					"layer":           mapped,
+					"response_format": "json",
+				}
+				if mapped == "tenant" {
+					if ws == "" {
+						return fmt.Errorf("workspace_id required for workspace layer; run neurograph config set workspace_id <uuid>")
+					}
+					argsMap["workspace_id"] = ws
+				}
+
+				var resp map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_remember", argsMap, &resp); err != nil {
+					return err
+				}
+				output.Success("Memory stored")
+				output.KV("ID", toString(resp["id"]))
+				return nil
+			}
+
 			payload := map[string]any{
 				"content": strings.Join(args, " "),
 				"layer":   mapped,
 			}
 			if mapped == "tenant" {
-				if rt.cfg.Defaults.WorkspaceID == "" {
+				if ws == "" {
 					return fmt.Errorf("workspace_id required for workspace layer; run neurograph config set workspace_id <uuid>")
 				}
-				payload["workspace_id"] = rt.cfg.Defaults.WorkspaceID
-				payload["tenant_id"] = rt.cfg.Defaults.WorkspaceID
+				payload["workspace_id"] = ws
+				payload["tenant_id"] = ws
 			}
 
 			var resp map[string]any
@@ -171,6 +230,37 @@ func newQuickRecallCmd() *cobra.Command {
 			}
 
 			layers := []string{mapLayer(rt.cfg.Defaults.Layer)}
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"query":           strings.Join(args, " "),
+					"max_results":     limit,
+					"layers":          layers,
+					"response_format": "json",
+				}
+				if layers[0] == "tenant" {
+					if rt.cfg.Defaults.WorkspaceID == "" {
+						return fmt.Errorf("workspace_id required for workspace layer; run neurograph config set workspace_id <uuid>")
+					}
+					argsMap["workspace_id"] = rt.cfg.Defaults.WorkspaceID
+				}
+
+				var resp []map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_recall", argsMap, &resp); err != nil {
+					return err
+				}
+				for i, m := range resp {
+					output.Heading(fmt.Sprintf("Result %d", i+1))
+					output.KV("ID", toString(m["id"]))
+					output.KV("Layer", toString(m["layer"]))
+					output.KV("Score", toString(m["score"]))
+					fmt.Println(toString(m["content"]))
+				}
+				if len(resp) == 0 {
+					output.Info("No memory found")
+				}
+				return nil
+			}
+
 			payload := map[string]any{
 				"query":       strings.Join(args, " "),
 				"max_results": limit,

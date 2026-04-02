@@ -51,6 +51,42 @@ func newChatSendCmd() *cobra.Command {
 				return errors.New("workspace_id required for workspace layer")
 			}
 
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"message":         strings.Join(args, " "),
+					"use_memory":      agentsEnabled,
+					"layer":           mappedLayer,
+					"include_global":  includeGlobal,
+					"response_format": "json",
+				}
+				if conversationID != "" {
+					argsMap["conversation_id"] = strings.TrimSpace(conversationID)
+				}
+				if ws != "" {
+					argsMap["workspace_id"] = ws
+				}
+				if p := firstNonEmpty(provider, rt.cfg.Defaults.Provider); p != "" {
+					argsMap["provider"] = p
+				}
+				if m := firstNonEmpty(model, rt.cfg.Defaults.Model); m != "" {
+					argsMap["model"] = m
+				}
+
+				var resp map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_chat", argsMap, &resp); err != nil {
+					return err
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				fmt.Println(toString(resp["content"]))
+				output.KV("conversation_id", resp["conversation_id"])
+				output.KV("provider", resp["provider_used"])
+				output.KV("model", resp["model_used"])
+				output.KV("confidence", resp["confidence"])
+				return nil
+			}
+
 			payload := map[string]any{
 				"content":         strings.Join(args, " "),
 				"conversation_id": strings.TrimSpace(conversationID),
@@ -228,6 +264,35 @@ func newChatStreamCmd() *cobra.Command {
 			if mappedLayer == "workspace" && ws == "" {
 				return errors.New("workspace_id required for workspace layer")
 			}
+
+			if rt.useMCP {
+				argsMap := map[string]any{
+					"message":         strings.Join(args, " "),
+					"use_memory":      agentsEnabled,
+					"layer":           mappedLayer,
+					"include_global":  includeGlobal,
+					"response_format": "json",
+				}
+				if ws != "" {
+					argsMap["workspace_id"] = ws
+				}
+				if p := firstNonEmpty(provider, rt.cfg.Defaults.Provider); p != "" {
+					argsMap["provider"] = p
+				}
+				if m := firstNonEmpty(model, rt.cfg.Defaults.Model); m != "" {
+					argsMap["model"] = m
+				}
+				var resp map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_chat", argsMap, &resp); err != nil {
+					return err
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				fmt.Println(toString(resp["content"]))
+				return nil
+			}
+
 			payload := map[string]any{
 				"content":        strings.Join(args, " "),
 				"workspace_id":   ws,

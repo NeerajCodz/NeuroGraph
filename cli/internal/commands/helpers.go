@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -13,6 +15,13 @@ import (
 type runtime struct {
 	cfg    *config.Config
 	client *api.Client
+	useMCP bool
+}
+
+var globalMCPMode bool
+
+func setMCPMode(enabled bool) {
+	globalMCPMode = enabled
 }
 
 func loadRuntime() (*runtime, error) {
@@ -20,7 +29,7 @@ func loadRuntime() (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &runtime{cfg: cfg, client: api.NewClient(cfg)}, nil
+	return &runtime{cfg: cfg, client: api.NewClient(cfg), useMCP: globalMCPMode}, nil
 }
 
 func requireLogin(rt *runtime) error {
@@ -146,4 +155,65 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-3] + "..."
+}
+
+func mcpInvokeText(ctx context.Context, rt *runtime, toolName string, arguments map[string]any) (string, error) {
+	if rt == nil || rt.client == nil {
+		return "", errors.New("runtime not initialized")
+	}
+	if strings.TrimSpace(toolName) == "" {
+		return "", errors.New("tool name required")
+	}
+
+	params := map[string]any{
+		"name":      strings.TrimSpace(toolName),
+		"arguments": arguments,
+	}
+	var resp map[string]any
+	if err := rt.client.MCPInvoke(ctx, "tools/call", params, &resp); err != nil {
+		return "", err
+	}
+
+	if errObj, ok := resp["error"].(map[string]any); ok {
+		message := firstNonEmpty(toString(errObj["message"]), "mcp tool call failed")
+		return "", errors.New(message)
+	}
+
+	resultObj, ok := resp["result"].(map[string]any)
+	if !ok {
+		return "", errors.New("invalid mcp response payload")
+	}
+	contentArr, ok := resultObj["content"].([]any)
+	if !ok || len(contentArr) == 0 {
+		return "", errors.New("mcp response missing content")
+	}
+	contentItem, ok := contentArr[0].(map[string]any)
+	if !ok {
+		return "", errors.New("invalid mcp content payload")
+	}
+
+	return toString(contentItem["text"]), nil
+}
+
+func mcpInvokeJSON(ctx context.Context, rt *runtime, toolName string, arguments map[string]any, out any) error {
+	text, err := mcpInvokeText(ctx, rt, toolName, arguments)
+	if err != nil {
+		return err
+	}
+
+	raw := strings.TrimSpace(text)
+	if strings.HasPrefix(strings.ToLower(raw), "error:") {
+		msg := strings.TrimSpace(strings.TrimPrefix(raw, "Error:"))
+		if msg == "" {
+			msg = raw
+		}
+		return errors.New(msg)
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(raw), out); err != nil {
+		return fmt.Errorf("failed to parse mcp json response: %w", err)
+	}
+	return nil
 }
