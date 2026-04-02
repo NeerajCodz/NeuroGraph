@@ -90,11 +90,46 @@ async def sync_neo4j(
                     content=memory['content'], layer=memory['layer'],
                     created_at=memory['created_at'].isoformat()
                 )
+            
+            # Sync canvas edges for rich connections
+            edges = await conn.fetch("""
+                SELECT source_memory_id, target_memory_id, reason, confidence
+                FROM memory.canvas_edges 
+                WHERE layer = 'personal' 
+                LIMIT 100
+            """)
+            
+            edges_created = 0
+            for edge in edges:
+                try:
+                    result = await session.run("""
+                        MATCH (source:Memory {id: $source_id})
+                        MATCH (target:Memory {id: $target_id})
+                        CREATE (source)-[:CONNECTED_TO {
+                            reason: $reason, 
+                            confidence: $confidence,
+                            created_at: datetime()
+                        }]->(target)
+                        RETURN source, target
+                    """, 
+                        source_id=str(edge['source_memory_id']),
+                        target_id=str(edge['target_memory_id']),
+                        reason=edge['reason'],
+                        confidence=float(edge['confidence']) if edge['confidence'] else 0.8
+                    )
+                    if await result.single():
+                        edges_created += 1
+                except Exception as e:
+                    logger.warning(f"Edge creation failed: {e}")
+                    continue
         
         return AdminResponse(
             success=True,
-            message="Neo4j sync completed (subset)",
-            data={"memories_created": len(memories)}
+            message="Neo4j sync completed with edges",
+            data={
+                "memories_created": len(memories),
+                "edges_created": edges_created
+            }
         )
         
     except Exception as e:

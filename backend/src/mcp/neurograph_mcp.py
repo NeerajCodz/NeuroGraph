@@ -22,13 +22,16 @@ import os
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.auth.jwt import create_access_token
 from src.core.config import get_settings
 from src.core.logging import get_logger
+from src.mcp.backend_routes import BackendRouteError, BackendRoutesClient
 
 logger = get_logger(__name__)
 
@@ -40,6 +43,8 @@ _session_state: dict[str, Any] = {
     "user_id": None,
     "tenant_id": None,
     "api_key": None,
+    "access_token": None,
+    "backend_url": None,
     "mode": "personal",
     "include_global": True,
     "initialized": False,
@@ -367,6 +372,18 @@ class ChatInput(BaseModel):
         default=None,
         description="Workspace ID for workspace context",
     )
+    conversation_id: Optional[str] = Field(
+        default=None,
+        description="Conversation ID to continue an existing thread",
+    )
+    layer: Optional[str] = Field(
+        default=None,
+        description="Chat layer: personal, workspace, or global",
+    )
+    include_global: bool = Field(
+        default=False,
+        description="Whether to include global memory context",
+    )
     provider: Optional[str] = Field(
         default=None,
         description="LLM provider: 'gemini', 'nvidia', 'groq'",
@@ -374,6 +391,10 @@ class ChatInput(BaseModel):
     model: Optional[str] = Field(
         default=None,
         description="Model ID to use (e.g., 'gemini-2.0-flash', 'llama-3.3-70b-versatile')",
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
     )
 
 
@@ -431,15 +452,71 @@ async def _get_session_context() -> dict[str, Any]:
     
     if not _session_state["initialized"]:
         # Try to load from environment
+        access_token = os.environ.get("NEUROGRAPH_ACCESS_TOKEN")
         api_key = os.environ.get("NEUROGRAPH_API_KEY")
-        if api_key:
+        if access_token:
+            await _authenticate_token(access_token)
+        elif api_key:
             await _authenticate_api_key(api_key)
         else:
-            # Default to anonymous session with UUID(0) user
-            _session_state["user_id"] = UUID(int=0)
             _session_state["initialized"] = True
     
     return _session_state
+
+
+def _normalize_memory_layer(layer: str) -> str:
+    """Map MCP-facing memory layer values to backend route values."""
+    clean = layer.strip().lower()
+    if clean == "workspace":
+        return "tenant"
+    if clean in {"personal", "tenant", "global"}:
+        return clean
+    return "personal"
+
+
+def _resolve_workspace_id(workspace_id: Optional[str], ctx: dict[str, Any]) -> Optional[str]:
+    """Resolve workspace ID from explicit input or active session context."""
+    if workspace_id and workspace_id.strip():
+        return workspace_id.strip()
+
+    tenant_id = ctx.get("tenant_id")
+    if isinstance(tenant_id, UUID):
+        return str(tenant_id)
+    if isinstance(tenant_id, str) and tenant_id.strip():
+        return tenant_id.strip()
+    return None
+
+
+def _normalize_layers(layers: Optional[list[str]], ctx: dict[str, Any]) -> list[str]:
+    """Normalize and deduplicate layer values for backend search routes."""
+    source_layers = layers
+    if not source_layers:
+        if ctx.get("mode") == "workspace" and _resolve_workspace_id(None, ctx):
+            source_layers = ["tenant"]
+        else:
+            source_layers = ["personal"]
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for layer in source_layers:
+        mapped = _normalize_memory_layer(str(layer))
+        if mapped not in seen:
+            normalized.append(mapped)
+            seen.add(mapped)
+    return normalized
+
+
+async def _call_backend(
+    ctx: dict[str, Any],
+    method: str,
+    path: str,
+    *,
+    params: Any = None,
+    json_body: Optional[dict[str, Any]] = None,
+) -> Any:
+    """Call backend API routes through the MCP route client."""
+    client = BackendRoutesClient(ctx)
+    return await client.request(method, path, params=params, json_body=json_body)
 
 
 async def _authenticate_api_key(api_key: str) -> dict[str, Any]:
@@ -479,9 +556,17 @@ async def _authenticate_api_key(api_key: str) -> dict[str, Any]:
             )
         
         if row:
+            minted_access_token = create_access_token(
+                data={
+                    "sub": str(row["user_id"]),
+                    "email": row["email"],
+                    "type": "access",
+                }
+            )
             _session_state["user_id"] = row["user_id"]
             _session_state["tenant_id"] = row["tenant_id"]
             _session_state["api_key"] = api_key
+            _session_state["access_token"] = minted_access_token
             _session_state["initialized"] = True
             
             logger.info(
@@ -490,7 +575,11 @@ async def _authenticate_api_key(api_key: str) -> dict[str, Any]:
                 email=row["email"],
             )
             
-            return {"authenticated": True, "user_id": str(row["user_id"])}
+            return {
+                "authenticated": True,
+                "user_id": str(row["user_id"]),
+                "access_token": minted_access_token,
+            }
         
         raise ValueError("Invalid API key")
 
@@ -504,8 +593,18 @@ async def _authenticate_token(access_token: str) -> dict[str, Any]:
     try:
         payload = decode_token(access_token)
         user_id = UUID(payload["sub"])
+        tenant_id_raw = payload.get("tenant_id") or payload.get("workspace_id")
+        tenant_id: Optional[UUID] = None
+        if tenant_id_raw:
+            try:
+                tenant_id = UUID(str(tenant_id_raw))
+            except ValueError:
+                tenant_id = None
         
         _session_state["user_id"] = user_id
+        _session_state["tenant_id"] = tenant_id
+        _session_state["api_key"] = None
+        _session_state["access_token"] = access_token
         _session_state["initialized"] = True
         
         logger.info("mcp_authenticated_jwt", user_id=str(user_id))
@@ -591,50 +690,42 @@ async def neurograph_remember(params: RememberInput) -> str:
         return _format_error("Not authenticated. Run neurograph_authenticate first.")
     
     try:
-        from src.memory.manager import MemoryManager
-        from src.db.neo4j import get_neo4j_driver
-        from src.db.postgres import get_postgres_driver
-        
-        # Ensure connections
-        neo4j = get_neo4j_driver()
-        postgres = get_postgres_driver()
-        await neo4j.connect()
-        await postgres.connect()
-        
-        manager = MemoryManager()
-        
-        # Map layer
-        layer = params.layer.value
-        if layer == "workspace":
-            layer = "tenant"
-        
-        result = await manager.remember(
-            content=params.content,
-            user_id=ctx["user_id"],
-            layer=layer,
-            tenant_id=UUID(params.workspace_id) if params.workspace_id else ctx.get("tenant_id"),
-            metadata=params.metadata or {},
-        )
-        
+        layer = _normalize_memory_layer(params.layer.value)
+        workspace_id = _resolve_workspace_id(params.workspace_id, ctx)
+
+        payload: dict[str, Any] = {
+            "content": params.content,
+            "layer": layer,
+            "metadata": params.metadata or {},
+        }
+        if layer == "tenant":
+            if not workspace_id:
+                return _format_error("workspace_id is required for workspace memory")
+            payload["workspace_id"] = workspace_id
+            payload["tenant_id"] = workspace_id
+
+        result = await _call_backend(ctx, "POST", "/memory/remember", json_body=payload)
+
         if params.response_format == ResponseFormat.JSON:
-            return json.dumps({
-                "success": True,
-                "memory_id": str(result.get("id")),
-                "entities_extracted": [e.get("name") for e in result.get("entities", [])],
-                "confidence": result.get("confidence", 1.0),
-                "layer": result.get("layer", layer),
-            }, indent=2)
-        
-        # Markdown format
-        entities = [e.get("name") for e in result.get("entities", [])]
+            return json.dumps(result, indent=2, default=str)
+
+        entities = result.get("entities_extracted") or []
+        confidence = result.get("confidence", 1.0)
+        if isinstance(confidence, (int, float)):
+            confidence_text = f"{confidence:.0%}"
+        else:
+            confidence_text = str(confidence)
         return (
             f"✅ **Memory Stored**\n\n"
             f"- **ID**: `{result.get('id')}`\n"
             f"- **Layer**: {result.get('layer', layer)}\n"
-            f"- **Confidence**: {result.get('confidence', 1.0):.0%}\n"
+            f"- **Confidence**: {confidence_text}\n"
             f"- **Entities Extracted**: {', '.join(entities) if entities else 'None detected'}"
         )
-        
+
+    except BackendRouteError as e:
+        logger.error("mcp_remember_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_remember_error", error=str(e))
         return _format_error(str(e))
@@ -673,32 +764,22 @@ async def neurograph_recall(params: RecallInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.rag.hybrid_search import HybridSearch
-        from src.db.neo4j import get_neo4j_driver
-        from src.db.postgres import get_postgres_driver
-        
-        neo4j = get_neo4j_driver()
-        postgres = get_postgres_driver()
-        await neo4j.connect()
-        await postgres.connect()
-        
-        search = HybridSearch()
-        
-        # Determine layers
-        layers = params.layers or ["personal"]
-        if "workspace" in layers:
-            layers = [l if l != "workspace" else "tenant" for l in layers]
-        
-        results = await search.search(
-            query=params.query,
-            user_id=ctx["user_id"],
-            tenant_id=UUID(params.workspace_id) if params.workspace_id else ctx.get("tenant_id"),
-            layers=layers,
-            limit=params.max_results,
-            min_confidence=params.min_confidence,
-        )
-        
-        if not results:
+        layers = _normalize_layers(params.layers, ctx)
+        workspace_id = _resolve_workspace_id(params.workspace_id, ctx)
+        if "tenant" in layers and not workspace_id:
+            return _format_error("workspace_id is required when querying workspace memory")
+
+        payload: dict[str, Any] = {
+            "query": params.query,
+            "layers": layers,
+            "max_results": params.max_results,
+            "min_confidence": params.min_confidence,
+        }
+        if workspace_id:
+            payload["workspace_id"] = workspace_id
+
+        results = await _call_backend(ctx, "POST", "/memory/recall", json_body=payload)
+        if not isinstance(results, list) or not results:
             return "No memories found matching your query."
         
         if params.response_format == ResponseFormat.JSON:
@@ -707,11 +788,11 @@ async def neurograph_recall(params: RecallInput) -> str:
                 "count": len(results),
                 "results": [
                     {
-                        "id": str(r.node_id),
-                        "content": r.content,
-                        "score": round(r.final_score, 3),
-                        "confidence": round(r.confidence, 2),
-                        "layer": r.layer,
+                        "id": str(r.get("id")),
+                        "content": r.get("content", ""),
+                        "score": round(float(r.get("score", 0.0)), 3),
+                        "confidence": round(float(r.get("confidence", 0.0)), 2),
+                        "layer": r.get("layer"),
                     }
                     for r in results
                 ],
@@ -722,13 +803,18 @@ async def neurograph_recall(params: RecallInput) -> str:
         lines.append(f"Found **{len(results)}** relevant memories:\n")
         
         for i, r in enumerate(results, 1):
-            score = getattr(r, 'final_score', getattr(r, 'similarity', 0))
-            lines.append(f"### {i}. [{score:.2f}] {r.content[:100]}{'...' if len(r.content) > 100 else ''}")
-            lines.append(f"- Layer: `{r.layer}` | Confidence: {r.confidence:.0%}")
+            score = float(r.get("score", 0.0))
+            content = str(r.get("content", ""))
+            confidence = float(r.get("confidence", 0.0))
+            lines.append(f"### {i}. [{score:.2f}] {content[:100]}{'...' if len(content) > 100 else ''}")
+            lines.append(f"- Layer: `{r.get('layer', 'personal')}` | Confidence: {confidence:.0%}")
             lines.append("")
         
         return "\n".join(lines)
         
+    except BackendRouteError as e:
+        logger.error("mcp_recall_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_recall_error", error=str(e))
         return _format_error(str(e))
@@ -762,30 +848,20 @@ async def neurograph_search(params: SearchInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.rag.hybrid_search import HybridSearch
-        from src.db.neo4j import get_neo4j_driver
-        from src.db.postgres import get_postgres_driver
-        
-        neo4j = get_neo4j_driver()
-        postgres = get_postgres_driver()
-        await neo4j.connect()
-        await postgres.connect()
-        
-        search = HybridSearch()
-        
-        layers = params.layers or ["personal"]
-        if "workspace" in layers:
-            layers = [l if l != "workspace" else "tenant" for l in layers]
-        
-        results = await search.search(
-            query=params.query,
-            user_id=ctx["user_id"],
-            tenant_id=UUID(params.workspace_id) if params.workspace_id else ctx.get("tenant_id"),
-            layers=layers,
-            limit=params.limit,
-        )
-        
-        if not results:
+        layers = _normalize_layers(params.layers, ctx)
+        workspace_id = _resolve_workspace_id(params.workspace_id, ctx)
+        if "tenant" in layers and not workspace_id:
+            return _format_error("workspace_id is required when querying workspace memory")
+
+        query_params: list[tuple[str, str]] = [("q", params.query), ("limit", str(params.limit))]
+        for layer in layers:
+            query_params.append(("layers", layer))
+        if workspace_id:
+            query_params.append(("workspace_id", workspace_id))
+
+        query_string = "&".join(f"{k}={quote(v)}" for k, v in query_params)
+        results = await _call_backend(ctx, "GET", f"/memory/search?{query_string}")
+        if not isinstance(results, list) or not results:
             return "No results found."
         
         if params.response_format == ResponseFormat.JSON:
@@ -798,10 +874,10 @@ async def neurograph_search(params: SearchInput) -> str:
                 "has_more": len(results) == params.limit,
                 "results": [
                     {
-                        "id": str(r.node_id),
-                        "content": r.content,
-                        "score": round(getattr(r, 'final_score', 0), 3),
-                        "layer": r.layer,
+                        "id": str(r.get("id")),
+                        "content": r.get("content", ""),
+                        "score": round(float(r.get("score", 0.0)), 3),
+                        "layer": r.get("layer"),
                     }
                     for r in results
                 ],
@@ -812,14 +888,18 @@ async def neurograph_search(params: SearchInput) -> str:
         lines.append(f"Query: \"{params.query}\" | Type: {params.search_type.value}\n")
         
         for i, r in enumerate(results, 1):
-            score = getattr(r, 'final_score', 0)
-            lines.append(f"{i}. **[{score:.2f}]** {r.content[:150]}...")
+            score = float(r.get("score", 0.0))
+            content = str(r.get("content", ""))
+            lines.append(f"{i}. **[{score:.2f}]** {content[:150]}...")
         
         if len(results) == params.limit:
             lines.append(f"\n*More results available. Use offset={params.offset + params.limit}*")
         
         return "\n".join(lines)
         
+    except BackendRouteError as e:
+        logger.error("mcp_search_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_search_error", error=str(e))
         return _format_error(str(e))
@@ -853,39 +933,13 @@ async def neurograph_forget(params: ForgetInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.db.postgres import get_postgres_driver
-        
-        postgres = get_postgres_driver()
-        await postgres.connect()
-        
-        layer = params.layer.value
-        if layer == "workspace":
-            layer = "tenant"
-        
-        async with postgres.connection() as conn:
-            # Verify ownership before delete
-            row = await conn.fetchrow(
-                """
-                SELECT id, user_id, layer FROM memory.embeddings
-                WHERE id = $1 AND layer = $2
-                """,
-                UUID(params.memory_id),
-                layer,
-            )
-            
-            if not row:
-                return _format_error(f"Memory {params.memory_id} not found")
-            
-            if row["layer"] == "personal" and row["user_id"] != ctx["user_id"]:
-                return _format_error("Permission denied - not your memory")
-            
-            await conn.execute(
-                "DELETE FROM memory.embeddings WHERE id = $1",
-                UUID(params.memory_id),
-            )
-        
+        _ = _normalize_memory_layer(params.layer.value)
+        await _call_backend(ctx, "DELETE", f"/memory/{quote(params.memory_id)}")
         return f"✅ Memory `{params.memory_id}` deleted successfully."
-        
+
+    except BackendRouteError as e:
+        logger.error("mcp_forget_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_forget_error", error=str(e))
         return _format_error(str(e))
@@ -916,46 +970,22 @@ async def neurograph_list_memories(params: ListMemoriesInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.db.postgres import get_postgres_driver
-        
-        postgres = get_postgres_driver()
-        await postgres.connect()
-        
-        layer = params.layer.value
-        if layer == "workspace":
-            layer = "tenant"
-        
-        async with postgres.connection() as conn:
-            if layer == "personal":
-                rows = await conn.fetch(
-                    """
-                    SELECT id, content, confidence, created_at
-                    FROM memory.embeddings
-                    WHERE user_id = $1 AND layer = 'personal'
-                    ORDER BY created_at DESC
-                    LIMIT $2 OFFSET $3
-                    """,
-                    ctx["user_id"],
-                    params.limit,
-                    params.offset,
-                )
-            else:
-                workspace_id = UUID(params.workspace_id) if params.workspace_id else ctx.get("tenant_id")
-                rows = await conn.fetch(
-                    """
-                    SELECT id, content, confidence, created_at
-                    FROM memory.embeddings
-                    WHERE tenant_id = $1 AND layer = $2
-                    ORDER BY created_at DESC
-                    LIMIT $3 OFFSET $4
-                    """,
-                    workspace_id,
-                    layer,
-                    params.limit,
-                    params.offset,
-                )
-        
-        if not rows:
+        layer = _normalize_memory_layer(params.layer.value)
+        workspace_id = _resolve_workspace_id(params.workspace_id, ctx)
+        if layer == "tenant" and not workspace_id:
+            return _format_error("workspace_id is required for workspace memory")
+
+        query_params = [
+            ("layer", layer),
+            ("limit", str(params.limit)),
+            ("offset", str(params.offset)),
+        ]
+        if workspace_id:
+            query_params.append(("workspace_id", workspace_id))
+        query_string = "&".join(f"{k}={quote(v)}" for k, v in query_params)
+
+        rows = await _call_backend(ctx, "GET", f"/memory/list?{query_string}")
+        if not isinstance(rows, list) or not rows:
             return f"No memories found in {params.layer.value} layer."
         
         if params.response_format == ResponseFormat.JSON:
@@ -966,10 +996,10 @@ async def neurograph_list_memories(params: ListMemoriesInput) -> str:
                 "has_more": len(rows) == params.limit,
                 "memories": [
                     {
-                        "id": str(r["id"]),
-                        "content": r["content"][:200],
-                        "confidence": float(r["confidence"]),
-                        "created_at": r["created_at"].isoformat(),
+                        "id": str(r.get("id")),
+                        "content": str(r.get("content", ""))[:200],
+                        "confidence": float(r.get("confidence", 0.0)),
+                        "created_at": str(r.get("created_at")),
                     }
                     for r in rows
                 ],
@@ -978,13 +1008,17 @@ async def neurograph_list_memories(params: ListMemoriesInput) -> str:
         # Markdown
         lines = [f"## {params.layer.value.title()} Memories\n"]
         for r in rows:
-            lines.append(f"- **{str(r['id'])[:8]}...** {r['content'][:100]}...")
+            content = str(r.get("content", ""))
+            lines.append(f"- **{str(r.get('id'))[:8]}...** {content[:100]}...")
         
         if len(rows) == params.limit:
             lines.append(f"\n*Use offset={params.offset + params.limit} for more*")
         
         return "\n".join(lines)
         
+    except BackendRouteError as e:
+        logger.error("mcp_list_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_list_error", error=str(e))
         return _format_error(str(e))
@@ -1023,44 +1057,31 @@ async def neurograph_add_entity(params: AddEntityInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.db.neo4j import get_neo4j_driver
-        
-        neo4j = get_neo4j_driver()
-        await neo4j.connect()
-        
-        entity_id = str(uuid4())
-        properties = params.properties or {}
-        properties["created_at"] = datetime.utcnow().isoformat()
-        properties["user_id"] = str(ctx["user_id"])
-        
-        async with neo4j.session() as session:
-            await session.run(
-                """
-                CREATE (e:Entity {
-                    id: $id,
-                    name: $name,
-                    type: $type,
-                    layer: $layer,
-                    user_id: $user_id
-                })
-                SET e += $properties
-                """,
-                id=entity_id,
-                name=params.name,
-                type=params.entity_type,
-                layer=params.layer.value,
-                user_id=str(ctx["user_id"]),
-                properties=properties,
-            )
-        
+        layer = _normalize_memory_layer(params.layer.value)
+        workspace_id = _resolve_workspace_id(params.workspace_id, ctx)
+        payload: dict[str, Any] = {
+            "name": params.name,
+            "entity_type": params.entity_type,
+            "properties": params.properties or {},
+            "layer": layer,
+        }
+        if layer == "tenant" and workspace_id:
+            payload["workspace_id"] = workspace_id
+            payload["tenant_id"] = workspace_id
+
+        created = await _call_backend(ctx, "POST", "/graph/entities", json_body=payload)
+        entity_id = str(created.get("id", "ent_placeholder"))
         return (
             f"✅ **Entity Created**\n\n"
             f"- **ID**: `{entity_id}`\n"
-            f"- **Name**: {params.name}\n"
-            f"- **Type**: {params.entity_type}\n"
-            f"- **Layer**: {params.layer.value}"
+            f"- **Name**: {created.get('name', params.name)}\n"
+            f"- **Type**: {created.get('type', params.entity_type)}\n"
+            f"- **Layer**: {created.get('layer', layer)}"
         )
         
+    except BackendRouteError as e:
+        logger.error("mcp_add_entity_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_add_entity_error", error=str(e))
         return _format_error(str(e))
@@ -1094,40 +1115,34 @@ async def neurograph_add_relationship(params: AddRelationshipInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.db.neo4j import get_neo4j_driver
-        
-        neo4j = get_neo4j_driver()
-        await neo4j.connect()
-        
         rel_type = params.relationship_type.upper().replace(" ", "_")
-        properties = params.properties or {}
-        properties["confidence"] = params.confidence
-        properties["created_at"] = datetime.utcnow().isoformat()
-        
-        async with neo4j.session() as session:
-            result = await session.run(
-                f"""
-                MATCH (a:Entity), (b:Entity)
-                WHERE (a.name = $source OR a.id = $source)
-                  AND (b.name = $target OR b.id = $target)
-                CREATE (a)-[r:{rel_type} $props]->(b)
-                RETURN a.name AS source, b.name AS target
-                """,
-                source=params.source_entity,
-                target=params.target_entity,
-                props=properties,
-            )
-            record = await result.single()
-            
-            if not record:
-                return _format_error("One or both entities not found")
-        
+        payload: dict[str, Any] = {
+            "source_id": params.source_entity,
+            "target_id": params.target_entity,
+            "relationship_type": rel_type,
+            "properties": params.properties or {},
+            "reason": (params.properties or {}).get("reason"),
+            "confidence": params.confidence,
+        }
+        created = await _call_backend(ctx, "POST", "/graph/relationships", json_body=payload)
+        source = created.get("source_id", params.source_entity)
+        target = created.get("target_id", params.target_entity)
+        created_type = created.get("type", rel_type)
+        created_confidence = created.get("confidence", params.confidence)
+        if isinstance(created_confidence, (int, float)):
+            confidence_text = f"{created_confidence:.0%}"
+        else:
+            confidence_text = str(created_confidence)
+
         return (
             f"✅ **Relationship Created**\n\n"
-            f"`{record['source']}` → **{rel_type}** → `{record['target']}`\n"
-            f"Confidence: {params.confidence:.0%}"
+            f"`{source}` → **{created_type}** → `{target}`\n"
+            f"Confidence: {confidence_text}"
         )
         
+    except BackendRouteError as e:
+        logger.error("mcp_add_relationship_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_add_relationship_error", error=str(e))
         return _format_error(str(e))
@@ -1161,61 +1176,98 @@ async def neurograph_traverse_graph(params: TraverseGraphInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.db.neo4j import get_neo4j_driver
-        
-        neo4j = get_neo4j_driver()
-        await neo4j.connect()
-        
-        async with neo4j.session() as session:
-            result = await session.run(
-                """
-                MATCH path = (start:Entity)-[r*1..$hops]-(connected:Entity)
-                WHERE start.name = $start_name OR start.id = $start_name
-                RETURN 
-                    [n IN nodes(path) | {name: n.name, type: n.type}] AS nodes,
-                    [rel IN relationships(path) | {type: type(rel), confidence: rel.confidence}] AS relationships,
-                    length(path) AS hops
-                ORDER BY length(path)
-                LIMIT 50
-                """,
-                start_name=params.start_entity,
-                hops=params.max_hops,
+        max_hops = max(1, params.max_hops)
+        start = params.start_entity
+        queue: list[tuple[str, int, list[str]]] = [(start, 0, [start])]
+        visited: set[str] = {start}
+        traversed_paths: list[dict[str, Any]] = []
+        traversed_edges: list[dict[str, Any]] = []
+        max_expansions = 60
+        expansions = 0
+
+        while queue and expansions < max_expansions:
+            current, depth, path_nodes = queue.pop(0)
+            if depth >= max_hops:
+                continue
+
+            relationships = await _call_backend(
+                ctx,
+                "GET",
+                f"/graph/relationships/{quote(current)}?direction=both",
             )
-            records = await result.data()
-        
-        if not records:
+            if not isinstance(relationships, list):
+                continue
+
+            for rel in relationships:
+                source_id = str(rel.get("source_id", ""))
+                target_id = str(rel.get("target_id", ""))
+                rel_type = str(rel.get("type", "RELATED_TO"))
+                confidence = float(rel.get("confidence", 1.0))
+
+                if source_id == current and target_id:
+                    next_node = target_id
+                elif target_id == current and source_id:
+                    next_node = source_id
+                else:
+                    next_node = target_id or source_id
+
+                if not next_node:
+                    continue
+
+                traversed_edges.append(
+                    {
+                        "source": source_id,
+                        "target": target_id,
+                        "type": rel_type,
+                        "confidence": confidence,
+                    }
+                )
+
+                if next_node in path_nodes:
+                    continue
+
+                next_path = path_nodes + [next_node]
+                traversed_paths.append(
+                    {
+                        "nodes": next_path,
+                        "hops": len(next_path) - 1,
+                        "last_relationship": rel_type,
+                    }
+                )
+
+                if next_node not in visited:
+                    visited.add(next_node)
+                    queue.append((next_node, depth + 1, next_path))
+                    expansions += 1
+
+        if not traversed_paths:
             return f"No connections found for entity '{params.start_entity}'"
         
         if params.response_format == ResponseFormat.JSON:
             return json.dumps({
                 "start_entity": params.start_entity,
-                "max_hops": params.max_hops,
-                "paths_found": len(records),
-                "paths": records,
+                "max_hops": max_hops,
+                "paths_found": len(traversed_paths),
+                "paths": traversed_paths,
+                "edges": traversed_edges,
             }, indent=2)
         
         # Markdown format
         lines = [f"## Graph Traversal from '{params.start_entity}'\n"]
         
         seen_paths = set()
-        for record in records:
-            nodes = record["nodes"]
-            rels = record["relationships"]
-            
-            path_parts = []
-            for i, node in enumerate(nodes):
-                path_parts.append(f"**{node['name']}**")
-                if i < len(rels):
-                    rel = rels[i]
-                    path_parts.append(f" →[{rel['type']}]→ ")
-            
-            path_str = "".join(path_parts)
+        for path in traversed_paths:
+            nodes = [str(n) for n in path.get("nodes", [])]
+            path_str = " -> ".join(f"**{node}**" for node in nodes)
             if path_str not in seen_paths:
                 lines.append(f"- {path_str}")
                 seen_paths.add(path_str)
         
         return "\n".join(lines)
         
+    except BackendRouteError as e:
+        logger.error("mcp_traverse_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_traverse_error", error=str(e))
         return _format_error(str(e))
@@ -1249,46 +1301,13 @@ async def neurograph_explain(params: ExplainNodeInput) -> str:
         return _format_error("Not authenticated")
     
     try:
-        from src.db.neo4j import get_neo4j_driver
-        
-        neo4j = get_neo4j_driver()
-        await neo4j.connect()
-        
-        async with neo4j.session() as session:
-            # Get node info
-            node_result = await session.run(
-                """
-                MATCH (n:Entity)
-                WHERE n.id = $node_id OR n.name = $node_id
-                RETURN n {.*, labels: labels(n)} AS node
-                """,
-                node_id=params.node_id,
-            )
-            node_record = await node_result.single()
-            
-            if not node_record:
-                return _format_error(f"Node '{params.node_id}' not found")
-            
-            node = node_record["node"]
-            
-            # Get connections
-            conn_result = await session.run(
-                """
-                MATCH (n:Entity)-[r]-(connected:Entity)
-                WHERE n.id = $node_id OR n.name = $node_id
-                RETURN 
-                    type(r) AS relationship,
-                    r.reason AS reason,
-                    r.confidence AS confidence,
-                    connected.name AS connected_to,
-                    connected.type AS connected_type,
-                    CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END AS direction
-                ORDER BY r.confidence DESC
-                LIMIT 20
-                """,
-                node_id=params.node_id,
-            )
-            connections = await conn_result.data()
+        node = await _call_backend(ctx, "GET", f"/graph/entities/{quote(params.node_id)}")
+        relationships = await _call_backend(
+            ctx,
+            "GET",
+            f"/graph/relationships/{quote(params.node_id)}?direction=both",
+        )
+        connections = relationships if isinstance(relationships, list) else []
         
         if params.response_format == ResponseFormat.JSON:
             return json.dumps({
@@ -1308,13 +1327,17 @@ async def neurograph_explain(params: ExplainNodeInput) -> str:
         
         if connections:
             for conn in connections:
-                direction = "→" if conn["direction"] == "outgoing" else "←"
+                source = str(conn.get("source_id", ""))
+                target = str(conn.get("target_id", ""))
+                relation = str(conn.get("type", "RELATED_TO"))
                 confidence = conn.get("confidence", 0.8)
                 reason = conn.get("reason", "")
+                direction = "→" if source == params.node_id else "←"
+                connected_to = target if source == params.node_id else source
                 
                 lines.append(
-                    f"- {direction} **{conn['relationship']}** {direction} "
-                    f"{conn['connected_to']} ({conn['connected_type']}) "
+                    f"- {direction} **{relation}** {direction} "
+                    f"{connected_to} "
                     f"[{confidence:.0%}]"
                 )
                 if reason:
@@ -1324,6 +1347,9 @@ async def neurograph_explain(params: ExplainNodeInput) -> str:
         
         return "\n".join(lines)
         
+    except BackendRouteError as e:
+        logger.error("mcp_explain_route_error", error=str(e))
+        return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_explain_error", error=str(e))
         return _format_error(str(e))
