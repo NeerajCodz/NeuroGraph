@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID, uuid4
+import json
 import time
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException
@@ -14,6 +15,21 @@ from src.db.postgres import get_postgres_driver
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+def _parse_json_list(value: object) -> list:
+    """Parse JSON-list fields that may arrive as list, JSON string, or None."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
 
 
 class ChatMessage(BaseModel):
@@ -522,27 +538,62 @@ async def get_conversation(
             "SELECT * FROM chat.messages WHERE conversation_id = $1 ORDER BY created_at ASC",
             conversation_id
         )
-    
-    return {
-        "id": str(conv["id"]),
-        "title": conv["title"],
-        "message_count": conv["message_count"],
-        "created_at": conv["created_at"].isoformat(),
-        "messages": [
+        step_rows = await conn.fetch(
+            """
+            SELECT message_id, step_number, action, status, result, reasoning, duration_ms
+            FROM chat.processing_steps
+            WHERE conversation_id = $1 AND message_id IS NOT NULL
+            ORDER BY created_at ASC, step_number ASC
+            """,
+            conversation_id,
+        )
+
+    steps_by_message: dict[str, list[dict]] = {}
+    for row in step_rows:
+        message_id = str(row["message_id"])
+        if message_id not in steps_by_message:
+            steps_by_message[message_id] = []
+        steps_by_message[message_id].append(
             {
-                "id": str(m["id"]),
+                "step_number": row["step_number"],
+                "action": row["action"] or "",
+                "status": row["status"] or "completed",
+                "description": "",
+                "reasoning": row["reasoning"] or "",
+                "result": row["result"],
+                "duration_ms": row["duration_ms"] or 0,
+                "details": [],
+            }
+        )
+
+    normalized_messages = []
+    for m in messages:
+        message_id = str(m["id"])
+        processing_steps = _parse_json_list(m["reasoning_path"])
+        if not processing_steps and message_id in steps_by_message:
+            processing_steps = steps_by_message[message_id]
+        sources = _parse_json_list(m["sources"])
+        normalized_messages.append(
+            {
+                "id": message_id,
                 "role": m["role"],
                 "content": m["content"],
                 "provider": m["provider"],
                 "model": m["model"],
                 "confidence": m["confidence"],
-                "reasoning_path": m["reasoning_path"],
-                "processing_steps": m["reasoning_path"],  # Alias for frontend compatibility
-                "sources": m["sources"],
+                "reasoning_path": processing_steps,
+                "processing_steps": processing_steps,  # Alias for frontend compatibility
+                "sources": sources,
                 "created_at": m["created_at"].isoformat(),
             }
-            for m in messages
-        ],
+        )
+
+    return {
+        "id": str(conv["id"]),
+        "title": conv["title"],
+        "message_count": conv["message_count"],
+        "created_at": conv["created_at"].isoformat(),
+        "messages": normalized_messages,
     }
 
 
@@ -591,7 +642,6 @@ async def websocket_chat(
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
-import json
 import asyncio
 
 
@@ -606,7 +656,8 @@ class StreamingStepResult:
         reasoning: str = "",
         result: str | None = None,
         duration_ms: int = 0,
-        details: list[dict] | None = None
+        details: list[dict] | None = None,
+        reasoning_output: str | None = None,  # Full reasoning trace from reasoning model
     ):
         self.step = step
         self.action = action
@@ -616,6 +667,7 @@ class StreamingStepResult:
         self.result = result
         self.duration_ms = duration_ms
         self.details = details or []
+        self.reasoning_output = reasoning_output
 
     def to_dict(self) -> dict:
         return {
@@ -627,6 +679,7 @@ class StreamingStepResult:
             "result": self.result,
             "duration_ms": self.duration_ms,
             "details": self.details,
+            "reasoning_output": self.reasoning_output,
         }
 
 
@@ -1330,8 +1383,17 @@ async def stream_chat(
                         reasoning=f"Traced {len(graph_paths)} paths, cited {len(cited_nodes)} nodes",
                         result=f"Reasoning confidence: {reasoning_confidence:.0%}",
                         duration_ms=step_duration,
-                        details=reasoning_details
+                        details=reasoning_details,
+                        reasoning_output=reasoning_trace or synthesized_context,  # Persist model output for refresh display
                     )
+                    # Also persist model output in details so historical rows can display it
+                    if step5_complete.reasoning_output:
+                        step5_complete.details.append(
+                            {
+                                "type": "result",
+                                "content": f"Reasoning output: {step5_complete.reasoning_output[:200]}",
+                            }
+                        )
                     step_results.append(step5_complete.to_dict())
                     yield f"data: {json.dumps({'type': 'step', 'data': step5_complete.to_dict()})}\n\n"
                     

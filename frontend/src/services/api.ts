@@ -18,6 +18,7 @@ export interface StreamingStep {
   result?: string;
   duration_ms?: number;
   details: StreamingStepDetail[];
+  reasoning_output?: string;
 }
 
 export interface StreamingResponse {

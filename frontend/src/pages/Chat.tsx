@@ -68,7 +68,56 @@ interface ProcessingStep {
   reasoning?: string;
   duration_ms?: number;
   details?: ProcessingStepDetail[];
+  reasoning_output?: string;  // Full reasoning trace from reasoning model
 }
+
+const parseProcessingSteps = (value: unknown): ProcessingStep[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return (value as ProcessingStep[]).map((step) => {
+      if (step.reasoning_output) return step;
+      const detailWithReasoning = step.details?.find(
+        (d) => typeof d.content === 'string' && d.content.startsWith('Reasoning output: ')
+      );
+      if (!detailWithReasoning) return step;
+      return {
+        ...step,
+        reasoning_output: detailWithReasoning.content.replace('Reasoning output: ', ''),
+      };
+    });
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (!Array.isArray(parsed)) return [];
+      return (parsed as ProcessingStep[]).map((step) => {
+        if (step.reasoning_output) return step;
+        const detailWithReasoning = step.details?.find(
+          (d) => typeof d.content === 'string' && d.content.startsWith('Reasoning output: ')
+        );
+        if (!detailWithReasoning) return step;
+        return {
+          ...step,
+          reasoning_output: detailWithReasoning.content.replace('Reasoning output: ', ''),
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const renderDetailIcon = (type: string) => {
+  switch (type) {
+    case 'connection': return <ArrowRight className="w-3 h-3 shrink-0" />;
+    case 'node': return <Circle className="w-3 h-3 shrink-0 fill-current" />;
+    case 'search': return <Search className="w-3 h-3 shrink-0" />;
+    case 'error': return <AlertTriangle className="w-3 h-3 shrink-0" />;
+    case 'result': return <CheckCircle className="w-3 h-3 shrink-0" />;
+    default: return <Circle className="w-2 h-2 shrink-0" />;
+  }
+};
 
 interface ModelInfo {
   id: string;
@@ -117,17 +166,6 @@ function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
     if (actionLower.includes('response') || actionLower.includes('generat')) 
       return <Sparkles className="w-3 h-3" />;
     return <Zap className="w-3 h-3" />;
-  };
-  
-  const getDetailIcon = (type: string) => {
-    switch (type) {
-      case 'connection': return <ArrowRight className="w-3 h-3 shrink-0" />;
-      case 'node': return <Circle className="w-3 h-3 shrink-0 fill-current" />;
-      case 'search': return <Search className="w-3 h-3 shrink-0" />;
-      case 'error': return <AlertTriangle className="w-3 h-3 shrink-0" />;
-      case 'result': return <CheckCircle className="w-3 h-3 shrink-0" />;
-      default: return <Circle className="w-2 h-2 shrink-0" />;
-    }
   };
   
   return (
@@ -185,12 +223,24 @@ function ProcessingAccordion({ steps }: { steps: ProcessingStep[] }) {
                       detail.type === 'result' ? 'text-purple-300/70' :
                       'text-white/50'
                     }`}>
-                      {getDetailIcon(detail.type)}
+                      {renderDetailIcon(detail.type)}
                       <span>{detail.content}</span>
                     </div>
                   ))}
                   {step.result && (
                     <p className="text-green-300/70"><span className="text-white/40">Result:</span> {step.result}</p>
+                  )}
+                  {/* Reasoning Output from Reasoning Model */}
+                  {step.reasoning_output && (
+                    <div className="mt-2 pt-2 border-t border-white/10">
+                      <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                        <Brain className="w-3 h-3" />
+                        Reasoning Model Output
+                      </p>
+                      <div className="bg-black/30 rounded-lg p-2.5 text-[11px] text-cyan-200/80 whitespace-pre-wrap font-mono max-h-40 overflow-y-auto">
+                        {step.reasoning_output}
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
@@ -394,9 +444,9 @@ export default function Chat() {
               id: string;
               role: 'user' | 'assistant';
               content: string;
-              reasoning_path?: ReasoningStep[] | null;
+              reasoning_path?: ReasoningStep[] | ProcessingStep[] | string | null;
               sources?: MemorySource[] | null;
-              processing_steps?: ProcessingStep[] | null;
+              processing_steps?: ProcessingStep[] | string | null;
               confidence?: number;
               created_at: string;
             }>;
@@ -407,12 +457,26 @@ export default function Chat() {
             id: msg.id,
             role: msg.role,
             content: msg.content,
-            reasoning_path: msg.reasoning_path,
+            reasoning_path: (() => {
+              const parsed = parseProcessingSteps(msg.reasoning_path);
+              if (parsed.length > 0) {
+                return parsed.map((s) => ({
+                  step: s.step_number,
+                  action: s.action,
+                  result: s.result || '',
+                })) as ReasoningStep[];
+              }
+              return Array.isArray(msg.reasoning_path) ? (msg.reasoning_path as ReasoningStep[]) : undefined;
+            })(),
             sources: msg.sources,
             confidence: msg.confidence,
             created_at: msg.created_at,
             // Processing steps are stored in processing_steps (or reasoning_path as fallback)
-            processing_steps: msg.processing_steps || (msg.reasoning_path as unknown as ProcessingStep[]) || [],
+            processing_steps: (() => {
+              const fromProcessingSteps = parseProcessingSteps(msg.processing_steps);
+              if (fromProcessingSteps.length > 0) return fromProcessingSteps;
+              return parseProcessingSteps(msg.reasoning_path);
+            })(),
             graph_paths: [],
           }));
           
@@ -495,6 +559,14 @@ export default function Chat() {
       },
       { 
         step_number: 2, 
+        action: 'Checking connected memories', 
+        description: 'Evaluating user-defined memory connections with confidence scoring',
+        status: 'pending', 
+        reasoning: 'Combining embedding similarity, reason, and edge metadata',
+        details: []
+      },
+      { 
+        step_number: 3, 
         action: 'Accessing graph memory', 
         description: 'Traversing knowledge graph for connected concepts',
         status: 'pending', 
@@ -502,7 +574,7 @@ export default function Chat() {
         details: []
       },
       { 
-        step_number: 3, 
+        step_number: 4, 
         action: 'Surfing web', 
         description: 'Searching for additional context online',
         status: 'pending', 
@@ -510,7 +582,15 @@ export default function Chat() {
         details: []
       },
       { 
-        step_number: 4, 
+        step_number: 5, 
+        action: 'Reasoning over context', 
+        description: 'Running reasoning model over memory and graph context',
+        status: 'pending', 
+        reasoning: 'Generate synthesized context and reasoning trace for final LLM',
+        details: []
+      },
+      { 
+        step_number: 6, 
         action: 'Generating response', 
         description: 'Synthesizing answer from all gathered context',
         status: 'pending', 
@@ -539,16 +619,31 @@ export default function Chat() {
             if (s.step_number === step.step_number) {
               return {
                 ...s,
-                status: step.status,
-                description: step.description,
-                reasoning: step.reasoning,
-                result: step.result,
-                duration_ms: step.duration_ms,
-                details: step.details || [],
+                  status: step.status,
+                  description: step.description,
+                  reasoning: step.reasoning,
+                  result: step.result,
+                  duration_ms: step.duration_ms,
+                  details: step.details || [],
+                  reasoning_output: step.reasoning_output,
               };
             }
             return s;
           });
+          if (!updatedSteps.some(s => s.step_number === step.step_number)) {
+            updatedSteps.push({
+              step_number: step.step_number,
+              action: step.action,
+              status: step.status,
+              description: step.description || '',
+              reasoning: step.reasoning || '',
+              result: step.result,
+              duration_ms: step.duration_ms,
+              details: step.details || [],
+              reasoning_output: step.reasoning_output,
+            });
+            updatedSteps.sort((a, b) => a.step_number - b.step_number);
+          }
           return {
             ...prev,
             steps: updatedSteps,
@@ -655,7 +750,7 @@ export default function Chat() {
                           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/45">NeuroGraph</p>
                            
                           {/* Processing Steps Accordion (shown on completed messages) */}
-                          {showReasoning && message.processing_steps && message.processing_steps.length > 0 && (
+                          {message.processing_steps && message.processing_steps.length > 0 && (
                             <ProcessingAccordion steps={message.processing_steps} />
                           )}
                           
@@ -724,9 +819,9 @@ export default function Chat() {
                                       {step.status === 'running' ? (
                                         <Loader2 className="w-3 h-3 animate-spin" />
                                       ) : step.status === 'completed' ? (
-                                        '✓'
+                                        <CheckCircle className="w-3 h-3" />
                                       ) : step.status === 'failed' ? (
-                                        '✗'
+                                        <AlertTriangle className="w-3 h-3" />
                                       ) : (
                                         step.step_number
                                       )}
@@ -746,7 +841,7 @@ export default function Chat() {
                                         <p className="text-white/50">{step.description}</p>
                                       )}
                                       {step.details && step.details.map((detail, idx) => (
-                                        <div key={idx} className={`flex gap-2 ${
+                                        <div key={idx} className={`flex items-center gap-2 ${
                                           detail.type === 'connection' ? 'text-cyan-300/70' :
                                           detail.type === 'node' ? 'text-green-300/70' :
                                           detail.type === 'search' ? 'text-yellow-300/70' :
@@ -754,16 +849,21 @@ export default function Chat() {
                                           detail.type === 'result' ? 'text-purple-300/70' :
                                           'text-white/50'
                                         }`}>
-                                          <span className="shrink-0">
-                                            {detail.type === 'connection' ? '→' :
-                                             detail.type === 'node' ? '◉' :
-                                             detail.type === 'search' ? '🔍' :
-                                             detail.type === 'error' ? '⚠' :
-                                             detail.type === 'result' ? '✓' : '•'}
-                                          </span>
+                                          {renderDetailIcon(detail.type)}
                                           <span>{detail.content}</span>
                                         </div>
                                       ))}
+                                      {step.reasoning_output && (
+                                        <div className="mt-2 pt-2 border-t border-white/10">
+                                          <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                            <Brain className="w-3 h-3" />
+                                            Reasoning Model Output
+                                          </p>
+                                          <div className="bg-black/30 rounded-lg p-2.5 text-[11px] text-cyan-200/80 whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">
+                                            {step.reasoning_output}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
