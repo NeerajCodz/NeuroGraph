@@ -47,13 +47,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from '@/components/ui/collapsible';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { ShinyText } from '@/components/reactbits/ShinyText';
 import { useAuth } from '@/contexts/AuthContext';
@@ -80,7 +73,6 @@ export function AppSidebar() {
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [newChatWorkspaceId, setNewChatWorkspaceId] = useState<string>('personal');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -118,7 +110,6 @@ export function AppSidebar() {
     ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : user?.email?.slice(0, 2).toUpperCase() || 'U';
 
-  const personalConversations = conversations.filter(c => !c.workspace_id).slice(0, 10);
   const isProfileRoute = location.pathname.startsWith('/profile');
 
   const profileSidebarItems = [
@@ -168,7 +159,7 @@ export function AppSidebar() {
         )}
       </SidebarHeader>
 
-      <SidebarContent className="flex flex-col gap-5 px-3 py-5">
+      <SidebarContent className="flex flex-col gap-4 px-2 py-4">
         {isProfileRoute ? (
           <SidebarGroup>
             <SidebarGroupLabel className="text-white/60">Profile Navigation</SidebarGroupLabel>
@@ -202,59 +193,48 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                     <SidebarMenuButton
                       tooltip="New Chat"
-                      onClick={() => handleNewChat(newChatWorkspaceId)}
+                      onClick={() => handleNewChat(null)}
                       className="gradient-primary text-primary-foreground h-11 rounded-2xl"
                     >
                       <Plus className="h-4 w-4" />
                       <span>New Chat</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  {!collapsed && (
-                    <SidebarMenuItem className="pt-2">
-                      <Select
-                        value={newChatWorkspaceId}
-                        onValueChange={(value) => {
-                          setNewChatWorkspaceId(value);
-                          handleNewChat(value);
-                        }}
-                      >
-                        <SelectTrigger className="h-9 w-full rounded-xl border-white/10 bg-white/5 text-white/80">
-                          <SelectValue placeholder="Open under workspace" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-[#110825] border-white/10">
-                          <SelectItem value="personal" className="text-white/75">
-                            Personal (no workspace)
-                          </SelectItem>
-                          {workspaces.map((ws) => (
-                            <SelectItem key={ws.id} value={ws.id} className="text-white">
-                              {ws.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </SidebarMenuItem>
-                  )}
                 </SidebarMenu>
               </SidebarGroup>
 
             {workspaces.map(ws => (
               <Collapsible key={ws.id} asChild defaultOpen className="group/collapsible">
-                <SidebarGroup>
-                  <SidebarGroupLabel>
-                    <CollapsibleTrigger className="text-white/60 hover:text-white">
-                      <FolderOpen className="mr-2 h-4 w-4" />
-                      {ws.name}
-                      <ChevronRight className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                    </CollapsibleTrigger>
+                <SidebarGroup className="p-0">
+                  <SidebarGroupLabel className="h-auto p-0">
+                    <div className="w-full rounded-2xl border border-white/10 bg-white/5 px-2 py-1.5">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleNewChat(ws.id)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-white/65 transition hover:bg-white/10 hover:text-white"
+                          title={`New chat in ${ws.name}`}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-white/75 transition hover:bg-white/10 hover:text-white">
+                          <FolderOpen className="h-4 w-4 shrink-0" />
+                          <span className="truncate text-sm">{ws.name}</span>
+                          <ChevronRight className="ml-auto h-4 w-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                        </CollapsibleTrigger>
+                      </div>
+                    </div>
                   </SidebarGroupLabel>
                   <CollapsibleContent>
-                    <SidebarGroupContent>
-                      <SidebarMenu>
-                        {conversations.filter(c => c.workspace_id === ws.id).map(chat => (
+                    <SidebarGroupContent className="pt-1">
+                      <SidebarMenu className="pl-4">
+                        {conversations.filter(c => c.workspace_id === ws.id).slice(0, 12).map(chat => (
                           <SidebarMenuItem key={chat.id}>
-                            <SidebarMenuButton onClick={() => navigate('/chat/' + chat.id)}>
-                              <History className="h-4 w-4" />
-                              <span className="truncate">{chat.title}</span>
+                            <SidebarMenuButton
+                              onClick={() => navigate('/chat/' + chat.id)}
+                              className="h-8 rounded-lg text-white/75 hover:text-white group-data-[collapsible=icon]:hidden"
+                            >
+                              <History className="h-3.5 w-3.5" />
+                              <span className="truncate text-xs">{chat.title}</span>
                             </SidebarMenuButton>
                           </SidebarMenuItem>
                         ))}
@@ -265,28 +245,12 @@ export function AppSidebar() {
               </Collapsible>
             ))}
 
-            <SidebarGroup>
-              <SidebarGroupLabel className="text-white/60">Prev chats</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {personalConversations.map(chat => (
-                    <SidebarMenuItem key={chat.id}>
-                      <SidebarMenuButton onClick={() => navigate('/chat/' + chat.id)}>
-                        <History className="h-4 w-4" />
-                        <span className="truncate">{chat.title}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
           </>
         )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-white/10 p-3">
-        <div className="mb-2 rounded-2xl border border-white/10 bg-white/5 p-1.5">
+        <div className="mb-2 rounded-2xl border border-white/10 bg-white/5 p-1.5 group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:py-1">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
