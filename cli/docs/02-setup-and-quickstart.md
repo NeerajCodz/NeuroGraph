@@ -195,5 +195,8 @@ Examples:
 .\neurograph.exe --mcp memory remember "Alice prefers async updates" --layer personal
 .\neurograph.exe --mcp memory recall "What does Alice prefer?" --limit 5
 .\neurograph.exe --mcp memory search "roadmap decisions" --limit 10
+.\neurograph.exe --mcp memory get 00000000-0000-0000-0000-000000000000
+.\neurograph.exe --mcp memory detail 00000000-0000-0000-0000-000000000000
+.\neurograph.exe --mcp memory delete 00000000-0000-0000-0000-000000000000
 .\neurograph.exe --mcp chat send "Draft sprint plan" --workspace-id 00000000-0000-0000-0000-000000000000 --layer workspace
 ```

@@ -137,9 +137,21 @@ func newMemoryRecallCmd() *cobra.Command {
 					argsMap["workspace_id"] = ws
 				}
 
-				var resp []map[string]any
-				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_recall", argsMap, &resp); err != nil {
+				var wrapped map[string]any
+				if err := mcpInvokeJSON(context.Background(), rt, "neurograph_recall", argsMap, &wrapped); err != nil {
 					return err
+				}
+				respAny, ok := wrapped["results"]
+				if !ok {
+					respAny = []any{}
+				}
+				resp := make([]map[string]any, 0)
+				if arr, ok := respAny.([]any); ok {
+					for _, item := range arr {
+						if m, ok := item.(map[string]any); ok {
+							resp = append(resp, m)
+						}
+					}
 				}
 				if jsonOut {
 					return output.JSON(resp)
@@ -525,6 +537,30 @@ func newMemoryGetCmd() *cobra.Command {
 			if err := requireLogin(rt); err != nil {
 				return err
 			}
+			if rt.useMCP {
+				var resp map[string]any
+				if err := mcpInvokeJSON(
+					context.Background(),
+					rt,
+					"neurograph_get_memory",
+					map[string]any{
+						"memory_id":       args[0],
+						"response_format": "json",
+					},
+					&resp,
+				); err != nil {
+					return err
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				output.Heading("Memory")
+				for _, k := range []string{"id", "layer", "confidence", "created_at", "updated_at"} {
+					output.KV(k, resp[k])
+				}
+				fmt.Println(toString(resp["content"]))
+				return nil
+			}
 			var resp map[string]any
 			if err := rt.client.Get(context.Background(), "/memory/"+url.PathEscape(args[0]), &resp); err != nil {
 				return err
@@ -556,6 +592,32 @@ func newMemoryDeleteCmd() *cobra.Command {
 			}
 			if err := requireLogin(rt); err != nil {
 				return err
+			}
+			if rt.useMCP {
+				var resp map[string]any
+				if err := mcpInvokeJSON(
+					context.Background(),
+					rt,
+					"neurograph_forget",
+					map[string]any{
+						"memory_id":       args[0],
+						"response_format": "json",
+					},
+					&resp,
+				); err != nil {
+					return err
+				}
+				msg := toString(resp["message"])
+				if msg == "" {
+					if resultMap, ok := resp["result"].(map[string]any); ok {
+						msg = toString(resultMap["message"])
+					}
+				}
+				if msg == "" {
+					msg = fmt.Sprintf("Memory %s deleted", args[0])
+				}
+				output.Success(msg)
+				return nil
 			}
 			var resp map[string]any
 			if err := rt.client.Delete(context.Background(), "/memory/"+url.PathEscape(args[0]), &resp); err != nil {
@@ -669,6 +731,30 @@ func newMemoryDetailCmd() *cobra.Command {
 			}
 			if err := requireLogin(rt); err != nil {
 				return err
+			}
+			if rt.useMCP {
+				var resp map[string]any
+				if err := mcpInvokeJSON(
+					context.Background(),
+					rt,
+					"neurograph_memory_detail",
+					map[string]any{
+						"memory_id":       args[0],
+						"response_format": "json",
+					},
+					&resp,
+				); err != nil {
+					return err
+				}
+				if jsonOut {
+					return output.JSON(resp)
+				}
+				output.Heading("Memory Detail")
+				for _, k := range []string{"id", "layer", "confidence", "is_locked", "embedding_dim", "created_at"} {
+					output.KV(k, resp[k])
+				}
+				fmt.Println(toString(resp["content"]))
+				return nil
 			}
 			var resp map[string]any
 			if err := rt.client.Get(context.Background(), "/memory/"+url.PathEscape(args[0])+"/detail", &resp); err != nil {

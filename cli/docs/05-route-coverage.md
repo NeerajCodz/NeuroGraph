@@ -135,6 +135,9 @@ When `--mcp` is enabled, these commands route through `/mcp/invoke` with `tools/
 - `recall`, `memory recall` → `neurograph_recall`
 - `memory search` → `neurograph_search`
 - `memory list` → `neurograph_list_memories`
+- `memory get` → `neurograph_get_memory`
+- `memory delete` → `neurograph_forget`
+- `memory detail` → `neurograph_memory_detail`
 - `memory count`, `memory status` → `neurograph_status`
 
 ## 11. Known backend limitations (not CLI gaps)

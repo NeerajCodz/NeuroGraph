@@ -32,7 +32,10 @@ def resolve_backend_base_url(session_ctx: dict[str, Any]) -> str:
         return env_base.rstrip("/")
 
     settings = get_settings()
-    return f"http://{settings.host}:{settings.port}/api/v1"
+    host = settings.host.strip() if isinstance(settings.host, str) else "127.0.0.1"
+    if host in {"0.0.0.0", "::"}:
+        host = "127.0.0.1"
+    return f"http://{host}:{settings.port}/api/v1"
 
 
 class BackendRoutesClient:

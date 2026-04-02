@@ -123,4 +123,4 @@ This reference is grouped by root command.
 
 ## 13. Global flags
 
-- `--mcp` routes supported commands through backend MCP tools (`ask`, `chat send`, `chat stream`, `memory remember|recall|search|list|count|status`, `remember`, `recall`).
+- `--mcp` routes supported commands through backend MCP tools (`ask`, `chat send`, `chat stream`, `memory remember|recall|search|list|get|delete|detail|count|status`, `remember`, `recall`).

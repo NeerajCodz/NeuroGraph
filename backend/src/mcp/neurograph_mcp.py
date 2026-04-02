@@ -211,6 +211,10 @@ class ForgetInput(BaseModel):
         default=None,
         description="Workspace ID for workspace/tenant memories",
     )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
 
 
 class ListMemoriesInput(BaseModel):
@@ -235,6 +239,34 @@ class ListMemoriesInput(BaseModel):
         default=0,
         description="Number of results to skip",
         ge=0,
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
+
+
+class GetMemoryInput(BaseModel):
+    """Input for fetching a single memory by ID."""
+    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
+
+    memory_id: str = Field(
+        ...,
+        description="UUID of the memory to fetch",
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
+
+
+class MemoryDetailInput(BaseModel):
+    """Input for fetching detailed memory payload by ID."""
+    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
+
+    memory_id: str = Field(
+        ...,
+        description="UUID of the memory to fetch detailed metadata for",
     )
     response_format: ResponseFormat = Field(
         default=ResponseFormat.MARKDOWN,
@@ -985,8 +1017,23 @@ async def neurograph_forget(params: ForgetInput) -> str:
     
     try:
         _ = _normalize_memory_layer(params.layer.value)
-        await _call_backend(ctx, "DELETE", f"/memory/{quote(params.memory_id)}")
-        return f"✅ Memory `{params.memory_id}` deleted successfully."
+        result = await _call_backend(ctx, "DELETE", f"/memory/{quote(params.memory_id)}")
+
+        if params.response_format == ResponseFormat.JSON:
+            return json.dumps(
+                {
+                    "memory_id": params.memory_id,
+                    "deleted": True,
+                    "result": result,
+                },
+                indent=2,
+                default=str,
+            )
+
+        message = str(result.get("message", "")).strip() if isinstance(result, dict) else ""
+        if not message:
+            message = f"Memory `{params.memory_id}` deleted successfully."
+        return f"✅ {message}"
 
     except BackendRouteError as e:
         logger.error("mcp_forget_route_error", error=str(e))
@@ -1072,6 +1119,93 @@ async def neurograph_list_memories(params: ListMemoriesInput) -> str:
         return _format_error(str(e))
     except Exception as e:
         logger.error("mcp_list_error", error=str(e))
+        return _format_error(str(e))
+
+
+@mcp.tool(
+    name="neurograph_get_memory",
+    annotations={
+        "title": "Get Memory",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def neurograph_get_memory(params: GetMemoryInput) -> str:
+    """Fetch a single memory by ID."""
+    ctx = await _get_session_context()
+
+    if not ctx.get("user_id"):
+        return _format_error("Not authenticated")
+
+    try:
+        memory = await _call_backend(ctx, "GET", f"/memory/{quote(params.memory_id)}")
+        if params.response_format == ResponseFormat.JSON:
+            return json.dumps(memory, indent=2, default=str)
+
+        lines = [
+            "## Memory",
+            "",
+            f"- **ID**: `{memory.get('id', params.memory_id)}`",
+            f"- **Layer**: {memory.get('layer', 'unknown')}",
+            f"- **Confidence**: {_to_float(memory.get('confidence'), 0.0):.2f}",
+            f"- **Created**: {memory.get('created_at', 'unknown')}",
+            f"- **Updated**: {memory.get('updated_at', 'unknown')}",
+            "",
+            str(memory.get("content", "")),
+        ]
+        return "\n".join(lines)
+
+    except BackendRouteError as e:
+        logger.error("mcp_get_memory_route_error", error=str(e))
+        return _format_error(str(e))
+    except Exception as e:
+        logger.error("mcp_get_memory_error", error=str(e))
+        return _format_error(str(e))
+
+
+@mcp.tool(
+    name="neurograph_memory_detail",
+    annotations={
+        "title": "Memory Detail",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def neurograph_memory_detail(params: MemoryDetailInput) -> str:
+    """Fetch detailed memory payload by ID."""
+    ctx = await _get_session_context()
+
+    if not ctx.get("user_id"):
+        return _format_error("Not authenticated")
+
+    try:
+        detail = await _call_backend(ctx, "GET", f"/memory/{quote(params.memory_id)}/detail")
+        if params.response_format == ResponseFormat.JSON:
+            return json.dumps(detail, indent=2, default=str)
+
+        lines = [
+            "## Memory Detail",
+            "",
+            f"- **ID**: `{detail.get('id', params.memory_id)}`",
+            f"- **Layer**: {detail.get('layer', 'unknown')}",
+            f"- **Confidence**: {_to_float(detail.get('confidence'), 0.0):.2f}",
+            f"- **Locked**: {bool(detail.get('is_locked', False))}",
+            f"- **Embedding Dimension**: {int(detail.get('embedding_dim', 0) or 0)}",
+            f"- **Created**: {detail.get('created_at', 'unknown')}",
+            "",
+            str(detail.get("content", "")),
+        ]
+        return "\n".join(lines)
+
+    except BackendRouteError as e:
+        logger.error("mcp_memory_detail_route_error", error=str(e))
+        return _format_error(str(e))
+    except Exception as e:
+        logger.error("mcp_memory_detail_error", error=str(e))
         return _format_error(str(e))
 
 
