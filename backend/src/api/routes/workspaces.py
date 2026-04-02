@@ -22,8 +22,8 @@ class WorkspaceCreate(BaseModel):
     description: str | None = None
     is_public: bool = False
     memory_enabled: bool = True
-    default_provider: str = "gemini"
-    default_model: str = "gemini-2.0-flash"
+    default_provider: str = "nvidia"
+    default_model: str = "devstral-2-123b"
 
 
 class WorkspaceUpdate(BaseModel):

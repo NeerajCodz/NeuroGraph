@@ -47,11 +47,15 @@ def _provider_candidate_order(requested_provider: str) -> list[str]:
 
 def _default_model_for_provider(provider: str, settings: Any) -> str:
     """Resolve default model for a specific provider."""
+    from src.models.nvidia import NVIDIA_MODELS
+
     if provider == "gemini":
         return settings.gemini_model_flash
     if provider == "groq":
         return settings.groq_model
     if provider == "nvidia":
+        if settings.default_llm_model in NVIDIA_MODELS:
+            return settings.default_llm_model
         return "devstral-2-123b"
     return settings.default_llm_model
 
@@ -267,7 +271,7 @@ async def send_message(
             custom_keys_raw = user_pref_settings.get("custom_provider_keys")
             if isinstance(custom_keys_raw, dict):
                 custom_provider_keys = {
-                    str(k): str(v)
+                    str(k).lower(): str(v)
                     for k, v in custom_keys_raw.items()
                     if isinstance(v, str) and v
                 }
@@ -846,7 +850,9 @@ async def stream_chat(
                     custom_keys_raw = user_pref_settings.get("custom_provider_keys")
                     if isinstance(custom_keys_raw, dict):
                         custom_provider_keys = {
-                            str(k): str(v) for k, v in custom_keys_raw.items() if isinstance(v, str) and v
+                            str(k).lower(): str(v)
+                            for k, v in custom_keys_raw.items()
+                            if isinstance(v, str) and v
                         }
 
             provider = message.provider or preferred_provider or settings.default_llm_provider

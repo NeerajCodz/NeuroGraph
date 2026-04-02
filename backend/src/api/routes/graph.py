@@ -303,7 +303,7 @@ async def visualize_graph(
             target: coalesce(endNode(r).id, endNode(r).name),
             type: type(r),
             reason: r.reason,
-            confidence: coalesce(r.confidence, r.weight, 1.0)
+            confidence: coalesce(r.confidence, 1.0)
          }) AS edges
     RETURN
       [n IN selected_nodes | {

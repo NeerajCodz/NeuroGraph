@@ -217,9 +217,6 @@ async def remember(
         # 4. Store in PostgreSQL
         postgres = get_postgres_driver()
         
-        # Format embedding as pgvector string (no spaces)
-        embedding_str = "[" + ",".join(map(str, embedding_list)) + "]"
-        
         # Prepare metadata with entity extraction status
         import json
         metadata_obj = dict(memory.metadata or {})
@@ -246,7 +243,7 @@ async def remember(
                 user_id if memory.layer == "personal" else None,
                 workspace_id if memory.layer == "tenant" else None,
                 memory.content,
-                embedding_str,
+                embedding_list,
                 metadata_json,
                 0.95 if memory.layer != "global" else 0.90,
             )

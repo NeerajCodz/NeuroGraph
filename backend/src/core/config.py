@@ -74,8 +74,8 @@ class Settings(BaseSettings):
     tavily_api_key: SecretStr | None = None
     
     # Default model provider and model for agents
-    default_llm_provider: str = "gemini"
-    default_llm_model: str = "gemini-2.0-flash"
+    default_llm_provider: str = "nvidia"
+    default_llm_model: str = "devstral-2-123b"
 
     # JWT Auth
     jwt_secret_key: SecretStr = Field(default=...)

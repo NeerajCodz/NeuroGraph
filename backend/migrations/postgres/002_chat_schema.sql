@@ -36,8 +36,8 @@ CREATE TABLE IF NOT EXISTS chat.workspaces (
     status chat.workspace_status DEFAULT 'active',
     settings JSONB DEFAULT '{}',
     memory_enabled BOOLEAN DEFAULT TRUE,
-    default_model VARCHAR(100) DEFAULT 'gemini-2.0-flash',
-    default_provider VARCHAR(50) DEFAULT 'gemini',
+    default_model VARCHAR(100) DEFAULT 'devstral-2-123b',
+    default_provider VARCHAR(50) DEFAULT 'nvidia',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -104,8 +104,8 @@ CREATE TABLE IF NOT EXISTS chat.processing_steps (
 -- User preferences (model selection, etc.)
 CREATE TABLE IF NOT EXISTS chat.user_preferences (
     user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    default_provider VARCHAR(50) DEFAULT 'gemini',
-    default_model VARCHAR(100) DEFAULT 'gemini-2.0-flash',
+    default_provider VARCHAR(50) DEFAULT 'nvidia',
+    default_model VARCHAR(100) DEFAULT 'devstral-2-123b',
     default_memory_layer VARCHAR(20) DEFAULT 'personal',
     agents_enabled BOOLEAN DEFAULT TRUE,
     theme VARCHAR(50) DEFAULT 'dark',

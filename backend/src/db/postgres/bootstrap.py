@@ -39,8 +39,8 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
         status VARCHAR(20) DEFAULT 'active',
         settings JSONB DEFAULT '{}',
         memory_enabled BOOLEAN DEFAULT TRUE,
-        default_model VARCHAR(100) DEFAULT 'gemini-2.0-flash',
-        default_provider VARCHAR(50) DEFAULT 'gemini',
+        default_model VARCHAR(100) DEFAULT 'devstral-2-123b',
+        default_provider VARCHAR(50) DEFAULT 'nvidia',
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
     )
@@ -107,8 +107,8 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS chat.user_preferences (
         user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-        default_provider VARCHAR(50) DEFAULT 'gemini',
-        default_model VARCHAR(100) DEFAULT 'gemini-2.0-flash',
+        default_provider VARCHAR(50) DEFAULT 'nvidia',
+        default_model VARCHAR(100) DEFAULT 'devstral-2-123b',
         default_memory_layer VARCHAR(20) DEFAULT 'personal',
         agents_enabled BOOLEAN DEFAULT TRUE,
         theme VARCHAR(50) DEFAULT 'dark',
@@ -124,8 +124,8 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'",
     "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'",
     "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS memory_enabled BOOLEAN DEFAULT TRUE",
-    "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS default_model VARCHAR(100) DEFAULT 'gemini-2.0-flash'",
-    "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS default_provider VARCHAR(50) DEFAULT 'gemini'",
+    "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS default_model VARCHAR(100) DEFAULT 'devstral-2-123b'",
+    "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS default_provider VARCHAR(50) DEFAULT 'nvidia'",
     "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
     "ALTER TABLE chat.workspaces ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
     # Workspace members compatibility columns.
@@ -167,8 +167,8 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE chat.processing_steps ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ",
     "ALTER TABLE chat.processing_steps ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()",
     # User preferences compatibility columns.
-    "ALTER TABLE chat.user_preferences ADD COLUMN IF NOT EXISTS default_provider VARCHAR(50) DEFAULT 'gemini'",
-    "ALTER TABLE chat.user_preferences ADD COLUMN IF NOT EXISTS default_model VARCHAR(100) DEFAULT 'gemini-2.0-flash'",
+    "ALTER TABLE chat.user_preferences ADD COLUMN IF NOT EXISTS default_provider VARCHAR(50) DEFAULT 'nvidia'",
+    "ALTER TABLE chat.user_preferences ADD COLUMN IF NOT EXISTS default_model VARCHAR(100) DEFAULT 'devstral-2-123b'",
     "ALTER TABLE chat.user_preferences ADD COLUMN IF NOT EXISTS default_memory_layer VARCHAR(20) DEFAULT 'personal'",
     "ALTER TABLE chat.user_preferences ADD COLUMN IF NOT EXISTS agents_enabled BOOLEAN DEFAULT TRUE",
     "ALTER TABLE chat.user_preferences ADD COLUMN IF NOT EXISTS theme VARCHAR(50) DEFAULT 'dark'",
@@ -221,6 +221,10 @@ BOOTSTRAP_STATEMENTS: tuple[str, ...] = (
     "UPDATE chat.conversations SET is_archived = FALSE WHERE is_archived IS NULL",
     "UPDATE chat.processing_steps SET status = 'pending' WHERE status IS NULL",
     "UPDATE chat.user_preferences SET agents_enabled = TRUE WHERE agents_enabled IS NULL",
+    "UPDATE chat.workspaces SET default_provider = 'nvidia' WHERE default_provider IS NULL OR default_provider = 'gemini'",
+    "UPDATE chat.workspaces SET default_model = 'devstral-2-123b' WHERE default_model IS NULL OR default_model = 'gemini-2.0-flash'",
+    "UPDATE chat.user_preferences SET default_provider = 'nvidia' WHERE default_provider IS NULL OR default_provider = 'gemini'",
+    "UPDATE chat.user_preferences SET default_model = 'devstral-2-123b' WHERE default_model IS NULL OR default_model = 'gemini-2.0-flash'",
 )
 
 

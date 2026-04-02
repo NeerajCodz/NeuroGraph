@@ -74,6 +74,16 @@ def build_entity_metadata_patch(
     return patch
 
 
+def _entity_extraction_error_text(error: Exception) -> str:
+    """Create concise error text for metadata/logging."""
+    text = str(error)
+    if not text:
+        return error.__class__.__name__
+    if len(text) <= 200:
+        return text
+    return text[:200]
+
+
 async def merge_entity_metadata(memory_id: UUID, metadata_patch: dict[str, Any]) -> None:
     """Merge entity metadata patch into memory metadata JSON."""
     postgres = get_postgres_driver()
@@ -201,7 +211,7 @@ async def _process_enrichment_payload(payload_raw: str) -> None:
                     "memory_enrichment_requeued",
                     memory_id=str(memory_id),
                     attempt=attempt + 1,
-                    error=str(process_error)[:200],
+                    error=_entity_extraction_error_text(process_error),
                 )
             else:
                 await merge_entity_metadata(
@@ -209,7 +219,7 @@ async def _process_enrichment_payload(payload_raw: str) -> None:
                     build_entity_metadata_patch(
                         status="failed",
                         source="queue",
-                        error=str(process_error),
+                        error=_entity_extraction_error_text(process_error),
                     ),
                 )
             return
@@ -219,14 +229,14 @@ async def _process_enrichment_payload(payload_raw: str) -> None:
             build_entity_metadata_patch(
                 status="failed",
                 source="queue",
-                error=str(process_error),
+                error=_entity_extraction_error_text(process_error),
             ),
         )
         logger.warning(
             "memory_enrichment_failed",
             memory_id=str(memory_id),
             attempt=attempt,
-            error=str(process_error)[:200],
+            error=_entity_extraction_error_text(process_error),
         )
 
 
@@ -277,11 +287,13 @@ async def stop_memory_enrichment_worker() -> None:
             return
         if _worker_stop_event is not None:
             _worker_stop_event.set()
-        _worker_task.cancel()
         try:
-            await _worker_task
-        except asyncio.CancelledError:
-            pass
+            if not _worker_task.done():
+                _worker_task.cancel()
+                try:
+                    await _worker_task
+                except asyncio.CancelledError:
+                    pass
         finally:
             _worker_task = None
             _worker_stop_event = None

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from src.api.dependencies import get_current_user
 from src.models.unified_llm import get_unified_llm, AVAILABLE_MODELS, LLMProvider
+from src.core.config import get_settings
 from src.models.nvidia import get_available_nvidia_models, NVIDIA_MODELS, is_nvidia_sdk_available
 from src.core.logging import get_logger
 from src.db.postgres import get_postgres_driver
@@ -20,12 +21,13 @@ async def list_providers(current_user = Depends(get_current_user)):
     Returns providers with their available models.
     """
     llm = get_unified_llm()
+    settings = get_settings()
     providers = llm.get_available_providers()
     
     return {
         "providers": providers,
-        "default_provider": "gemini",
-        "default_model": "gemini-2.0-flash",
+        "default_provider": settings.default_llm_provider,
+        "default_model": settings.default_llm_model,
     }
 
 
@@ -165,7 +167,11 @@ async def test_model(
     if pref and isinstance(pref["settings"], dict):
         raw_keys = pref["settings"].get("custom_provider_keys")
         if isinstance(raw_keys, dict):
-            custom_keys = {str(k): str(v) for k, v in raw_keys.items() if isinstance(v, str) and v}
+            custom_keys = {
+                str(k).lower(): str(v)
+                for k, v in raw_keys.items()
+                if isinstance(v, str) and v
+            }
 
     provider = provider_id.lower()
     key_override = custom_keys.get(provider)
