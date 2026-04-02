@@ -124,7 +124,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="font-sans">
-      <SidebarHeader className="h-24 justify-center border-b border-white/10 bg-gradient-to-b from-purple-900/35 via-purple-950/20 to-transparent px-4">
+      <SidebarHeader className="h-24 justify-center border-b border-white/10 bg-gradient-to-b from-purple-900/35 via-purple-950/20 to-transparent px-4 group-data-[collapsible=icon]:h-16 group-data-[collapsible=icon]:px-1.5 group-data-[collapsible=icon]:py-2">
         <div className="flex w-full items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 via-purple-500 to-fuchsia-600 shadow-[0_0_20px_rgba(168,85,247,0.4)] border border-white/20 p-2">
             <img src="/logo.svg" alt="NeuroGraph" className="h-full w-full brightness-0 invert drop-shadow-[0_0_6px_rgba(255,255,255,0.4)]" />
@@ -159,7 +159,7 @@ export function AppSidebar() {
         )}
       </SidebarHeader>
 
-      <SidebarContent className="flex flex-col gap-4 px-2 py-4">
+      <SidebarContent className="flex flex-col gap-4 px-2 py-4 group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:py-3">
         {isProfileRoute ? (
           <SidebarGroup>
             <SidebarGroupLabel className="text-white/60">Profile Navigation</SidebarGroupLabel>
@@ -203,7 +203,7 @@ export function AppSidebar() {
                 </SidebarMenu>
               </SidebarGroup>
 
-            {workspaces.map(ws => (
+            {!collapsed && workspaces.map(ws => (
               <Collapsible key={ws.id} asChild defaultOpen className="group/collapsible">
                 <SidebarGroup className="p-0">
                   <SidebarGroupLabel className="h-auto p-0">
@@ -231,7 +231,7 @@ export function AppSidebar() {
                           <SidebarMenuItem key={chat.id}>
                             <SidebarMenuButton
                               onClick={() => navigate('/chat/' + chat.id)}
-                              className="h-8 rounded-lg text-white/75 hover:text-white group-data-[collapsible=icon]:hidden"
+                              className="h-8 rounded-lg text-white/75 hover:text-white"
                             >
                               <History className="h-3.5 w-3.5" />
                               <span className="truncate text-xs">{chat.title}</span>
@@ -249,7 +249,7 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-white/10 p-3">
+      <SidebarFooter className="border-t border-white/10 p-3 group-data-[collapsible=icon]:p-1.5">
         <div className="mb-2 rounded-2xl border border-white/10 bg-white/5 p-1.5 group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:py-1">
           <SidebarMenu>
             <SidebarMenuItem>
@@ -277,8 +277,8 @@ export function AppSidebar() {
           </SidebarMenu>
         </div>
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-2xl p-2 text-left outline-none transition-colors hover:bg-white/5">
-            <Avatar className="h-8 w-8 border border-white/10">
+          <DropdownMenuTrigger className="flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-2xl p-2 text-left outline-none transition-colors hover:bg-white/5 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-0">
+            <Avatar className="h-8 w-8 shrink-0 border border-white/10">
               <AvatarFallback className="bg-purple-900/50 text-xs font-medium text-purple-200">
                 {userInitials}
               </AvatarFallback>
