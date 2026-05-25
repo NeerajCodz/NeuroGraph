@@ -26,37 +26,78 @@ from src.memory.enrichment_queue import (
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager for startup and shutdown events."""
     logger = get_logger(__name__)
-    
+
     # Startup
     logger.info("application_starting")
-    
-    # Initialize database connections
+
+    # Initialize database connections (graceful degradation)
     neo4j_driver = get_neo4j_driver()
     postgres_driver = get_postgres_driver()
     redis_driver = get_redis_driver()
-    
-    await neo4j_driver.connect()
-    await postgres_driver.connect()
-    await redis_driver.connect()
-    
+
+    connected = {"neo4j": False, "postgres": False, "redis": False}
+
+    try:
+        await neo4j_driver.connect()
+        connected["neo4j"] = True
+        logger.info("neo4j_startup_connected")
+    except Exception as e:
+        logger.warning("neo4j_startup_failed", error=str(e))
+
+    try:
+        await postgres_driver.connect()
+        connected["postgres"] = True
+        logger.info("postgres_startup_connected")
+    except Exception as e:
+        logger.warning("postgres_startup_failed", error=str(e))
+
+    try:
+        await redis_driver.connect()
+        connected["redis"] = True
+        logger.info("redis_startup_connected")
+    except Exception as e:
+        logger.warning("redis_startup_failed", error=str(e))
+
     # Store on app.state for access in routes
     app.state.neo4j = neo4j_driver
     app.state.postgres = postgres_driver
     app.state.redis = redis_driver
-    
-    await start_memory_enrichment_worker()
-    logger.info("databases_connected")
-    
+    app.state.db_connected = connected
+
+    if connected["neo4j"] and connected["postgres"]:
+        try:
+            await start_memory_enrichment_worker()
+        except Exception as e:
+            logger.warning("enrichment_worker_start_failed", error=str(e))
+
+    logger.info("application_started", **connected)
+
     yield
-    
+
     # Shutdown
     logger.info("application_shutting_down")
-    
-    await stop_memory_enrichment_worker()
-    await neo4j_driver.disconnect()
-    await postgres_driver.disconnect()
-    await redis_driver.disconnect()
-    
+
+    try:
+        await stop_memory_enrichment_worker()
+    except Exception:
+        pass
+
+    if connected["neo4j"]:
+        try:
+            await neo4j_driver.disconnect()
+        except Exception:
+            pass
+    if connected["postgres"]:
+        try:
+            await postgres_driver.disconnect()
+        except Exception:
+            pass
+    if connected["redis"]:
+        try:
+            await redis_driver.disconnect()
+        except Exception:
+            pass
+
     logger.info("databases_disconnected")
 
 
@@ -105,11 +146,12 @@ def create_app() -> FastAPI:
     @app.get("/ready")
     async def readiness_check() -> dict[str, bool]:
         """Readiness check with database connectivity."""
-        neo4j_healthy = await get_neo4j_driver().health_check()
-        postgres_healthy = await get_postgres_driver().health_check()
-        redis_healthy = await get_redis_driver().health_check()
-        ready = neo4j_healthy and postgres_healthy and redis_healthy
-        
+        connected = getattr(app.state, "db_connected", {})
+        neo4j_healthy = await get_neo4j_driver().health_check() if connected.get("neo4j") else False
+        postgres_healthy = await get_postgres_driver().health_check() if connected.get("postgres") else False
+        redis_healthy = await get_redis_driver().health_check() if connected.get("redis") else False
+        ready = neo4j_healthy and postgres_healthy
+
         return {
             "ready": ready,
             "neo4j": neo4j_healthy,
