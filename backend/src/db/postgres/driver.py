@@ -25,8 +25,9 @@ class PostgresDriver:
         self._connect_lock = asyncio.Lock()
         self._settings = get_settings()
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
     async def connect(self) -> None:
-        """Establish connection pool to PostgreSQL."""
+        """Establish connection pool to PostgreSQL with retry for transient failures."""
         current_loop = asyncio.get_running_loop()
 
         async with self._connect_lock:
@@ -75,6 +76,12 @@ class PostgresDriver:
                 )
             except Exception as e:
                 logger.error("postgres_connection_failed", error=str(e))
+                if self._pool is not None:
+                    try:
+                        await self._pool.close()
+                    except Exception:
+                        pass
+                    self._pool = None
                 raise ConnectionError(f"Failed to connect to PostgreSQL: {e}") from e
 
     async def _init_connection(self, conn: asyncpg.Connection) -> None:

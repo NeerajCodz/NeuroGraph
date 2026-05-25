@@ -23,8 +23,9 @@ class Neo4jDriver:
         self._connect_lock = asyncio.Lock()
         self._settings = get_settings()
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
     async def connect(self) -> None:
-        """Establish connection to Neo4j."""
+        """Establish connection to Neo4j with retry for transient failures."""
         current_loop = asyncio.get_running_loop()
 
         async with self._connect_lock:
@@ -59,6 +60,13 @@ class Neo4jDriver:
                 logger.info("neo4j_connected", uri=self._settings.neo4j_uri)
             except Exception as e:
                 logger.error("neo4j_connection_failed", error=str(e))
+                # Clean up driver on failure so retry starts fresh
+                if self._driver is not None:
+                    try:
+                        await self._driver.close()
+                    except Exception:
+                        pass
+                    self._driver = None
                 raise ConnectionError(f"Failed to connect to Neo4j: {e}") from e
 
     async def disconnect(self) -> None:

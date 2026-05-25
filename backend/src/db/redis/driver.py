@@ -22,8 +22,9 @@ class RedisDriver:
         self._connect_lock = asyncio.Lock()
         self._settings = get_settings()
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
     async def connect(self) -> None:
-        """Establish connection to Redis."""
+        """Establish connection to Redis with retry for transient failures."""
         current_loop = asyncio.get_running_loop()
 
         async with self._connect_lock:
@@ -56,6 +57,12 @@ class RedisDriver:
                 logger.info("redis_connected", url=self._settings.redis_url.split("@")[-1])
             except Exception as e:
                 logger.error("redis_connection_failed", error=str(e))
+                if self._client is not None:
+                    try:
+                        await self._client.aclose()
+                    except Exception:
+                        pass
+                    self._client = None
                 raise ConnectionError(f"Failed to connect to Redis: {e}") from e
 
     async def disconnect(self) -> None:
